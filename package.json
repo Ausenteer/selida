@@ -1,0 +1,16 @@
+{
+  "name": "selida",
+  "version": "0.1.0",
+  "description": "Language learning through reading",
+  "private": true,
+  "workspaces": [
+    "apps/api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@selida/api",
+    "test": "npm run test --workspace=@selida/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

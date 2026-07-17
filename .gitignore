@@ -1,0 +1,39 @@
+/tmp
+/out-tsc
+
+/node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/.pnp
+.pnp.js
+
+.vscode/*
+
+# macOS / IDE
+.DS_Store
+.idea/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.fvm/
+.packages
+build/
+coverage/
+*.iml
+
+# Flutter platform generated state
+apps/mobile/android/.gradle/
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/ios/Flutter/ephemeral/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# User-provided copyrighted test book (kept locally only)
+/apps/mobile/assets/books/below-zero.epub
