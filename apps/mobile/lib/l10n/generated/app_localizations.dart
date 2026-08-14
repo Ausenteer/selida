@@ -206,6 +206,24 @@ abstract class AppLocalizations {
   /// **'Reading settings'**
   String get readerSettings;
 
+  /// No description provided for @paragraphStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Paragraphs'**
+  String get paragraphStyle;
+
+  /// No description provided for @bookParagraphStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Book'**
+  String get bookParagraphStyle;
+
+  /// No description provided for @modernParagraphStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Modern'**
+  String get modernParagraphStyle;
+
   /// No description provided for @fontSize.
   ///
   /// In en, this message translates to:
@@ -283,6 +301,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Contents'**
   String get contents;
+
+  /// No description provided for @returnToPreviousLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to previous location'**
+  String get returnToPreviousLocation;
 
   /// No description provided for @mappingPrototype.
   ///
@@ -398,6 +422,48 @@ abstract class AppLocalizations {
   /// **'Explanation'**
   String get explanationTitle;
 
+  /// No description provided for @explanationSummaryLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'In short'**
+  String get explanationSummaryLabel;
+
+  /// No description provided for @explanationMeaningLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'In this context'**
+  String get explanationMeaningLabel;
+
+  /// No description provided for @explanationBreakdownLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'How it works'**
+  String get explanationBreakdownLabel;
+
+  /// No description provided for @explanationLiteralLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Literally'**
+  String get explanationLiteralLabel;
+
+  /// No description provided for @explanationNaturalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Natural translation'**
+  String get explanationNaturalLabel;
+
+  /// No description provided for @explanationExamplesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Examples'**
+  String get explanationExamplesLabel;
+
+  /// No description provided for @explanationCommonMistakeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Common mistake'**
+  String get explanationCommonMistakeLabel;
+
   /// No description provided for @lemmaDetails.
   ///
   /// In en, this message translates to:
@@ -504,6 +570,18 @@ abstract class AppLocalizations {
     int chapter,
     int chapterCount,
   );
+
+  /// No description provided for @readerCompactProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{page} of {pageCount} · {percent}%'**
+  String readerCompactProgress(int page, String pageCount, int percent);
+
+  /// No description provided for @readerProgressPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% · chapter {chapter} of {chapterCount}'**
+  String readerProgressPreview(int percent, int chapter, int chapterCount);
 
   /// No description provided for @previousChapter.
   ///

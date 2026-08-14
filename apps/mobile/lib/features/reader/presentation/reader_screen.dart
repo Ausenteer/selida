@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/core/database/database_provider.dart';
 import 'package:selida/features/dictionary/application/vocabulary_service.dart';
+import 'package:selida/features/reader/application/reader_pagination_cache.dart';
 import 'package:selida/features/reader/application/reader_paginator.dart';
 import 'package:selida/features/reader/application/reader_providers.dart';
 import 'package:selida/features/reader/domain/reader_page.dart';
@@ -46,11 +47,12 @@ final class _LoadedReader extends ConsumerStatefulWidget {
 }
 
 final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
-  static const double _readerTopInset = 72;
-  static const double _readerBottomInset = 58;
+  static const double _readerTopInset = 60;
+  static const double _readerBottomInset = 52;
 
   late final PageController _pageController;
   late final AppDatabase _database;
+  late final ReaderPaginationCache _paginationCache;
   late String _bookLanguage;
   late int _chapterIndex;
   var _currentPageIndex = 0;
@@ -76,6 +78,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   void initState() {
     super.initState();
     _database = ref.read(databaseProvider);
+    _paginationCache = ReaderPaginationCache(_database);
     _bookLanguage = _translationLanguage(widget.document.book.language);
     final savedPosition = widget.document.position;
     final savedChapterIndex = savedPosition == null
@@ -177,16 +180,16 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                     lineHeight: preferences.lineHeight,
                     locale: Locale(_bookLanguage),
                     textColor: palette.text,
+                    paragraphStyle: preferences.paragraphStyle,
                   );
-                  final key = <Object>[
-                    _chapter.id,
-                    spec.width,
-                    spec.height,
-                    spec.fontSize,
-                    spec.lineHeight,
-                    palette.text.toARGB32(),
-                  ].join(':');
-                  _schedulePagination(blocks: blocks, spec: spec, key: key);
+                  final identity = _paginationCache.identityFor(spec);
+                  final key = '${_chapter.id}:${identity.fingerprint}';
+                  _schedulePagination(
+                    blocks: blocks,
+                    spec: spec,
+                    identity: identity,
+                    key: key,
+                  );
                   final pages = _layoutKey == key ? _pages : null;
                   if (pages == null || pages.isEmpty) {
                     return _ReaderPageSkeleton(color: palette.skeleton);
@@ -315,6 +318,8 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
               _dismissWordPopover();
               unawaited(_showSettings());
             },
+            onProgressChanged: _seekToBookProgress,
+            chapterForProgress: _chapterNumberForBookProgress,
           ),
         ],
       ),
@@ -324,6 +329,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   void _schedulePagination({
     required List<ReaderBlock> blocks,
     required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
     required String key,
   }) {
     if ((_layoutKey == key && _paginationComplete) ||
@@ -341,7 +347,10 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
         _paginateIncrementally(
           blocks: blocks,
           spec: spec,
+          identity: identity,
           key: key,
+          chapterId: _chapter.id,
+          chapterLength: _chapter.lengthUtf16,
           generation: generation,
         ),
       );
@@ -351,9 +360,25 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   Future<void> _paginateIncrementally({
     required List<ReaderBlock> blocks,
     required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
     required String key,
+    required String chapterId,
+    required int chapterLength,
     required int generation,
   }) async {
+    final restored = await _restoreCachedPagination(
+      blocks: blocks,
+      spec: spec,
+      identity: identity,
+      key: key,
+      chapterId: chapterId,
+      chapterLength: chapterLength,
+      generation: generation,
+    );
+    if (restored || !mounted || generation != _paginationGeneration) {
+      return;
+    }
+
     final cursor = ReaderPaginator.start(blocks: blocks, spec: spec);
     final generated = <ReaderPage>[];
     var published = false;
@@ -415,6 +440,107 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
         _pendingLayoutKey = null;
         _paginationComplete = true;
       });
+    }
+    if (generated.isNotEmpty && generation == _paginationGeneration) {
+      unawaited(
+        _storePaginationSafely(
+          chapterId: chapterId,
+          spec: spec,
+          identity: identity,
+          pages: generated,
+        ),
+      );
+    }
+  }
+
+  Future<bool> _restoreCachedPagination({
+    required List<ReaderBlock> blocks,
+    required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
+    required String key,
+    required String chapterId,
+    required int chapterLength,
+    required int generation,
+  }) async {
+    List<CachedReaderPageRange>? ranges;
+    try {
+      ranges = await _paginationCache.load(
+        bookId: widget.document.book.id,
+        chapterId: chapterId,
+        identity: identity,
+        maximumOffset: chapterLength,
+      );
+    } on Object {
+      return false;
+    }
+    if (ranges == null || !mounted || generation != _paginationGeneration) {
+      return false;
+    }
+
+    final pages = <ReaderPage>[];
+    var rangeIndex = 0;
+    while (rangeIndex < ranges.length) {
+      final budget = Stopwatch()..start();
+      do {
+        final range = ranges[rangeIndex];
+        final page = ReaderPaginator.restorePage(
+          blocks: blocks,
+          spec: spec,
+          startOffset: range.startOffset,
+          endOffset: range.endOffset,
+        );
+        if (page == null) {
+          return false;
+        }
+        pages.add(page);
+        rangeIndex += 1;
+      } while (rangeIndex < ranges.length && budget.elapsedMicroseconds < 4000);
+      if (!mounted || generation != _paginationGeneration) {
+        return false;
+      }
+      if (rangeIndex < ranges.length) {
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    }
+
+    final targetPage = pages.indexWhere(
+      (ReaderPage page) =>
+          _currentTextOffset >= page.startOffset &&
+          _currentTextOffset < page.endOffset,
+    );
+    setState(() {
+      _pages = List<ReaderPage>.unmodifiable(pages);
+      _layoutKey = key;
+      _pendingLayoutKey = null;
+      _paginationComplete = true;
+      _currentPageIndex = targetPage < 0 ? 0 : targetPage;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          generation == _paginationGeneration &&
+          _pageController.hasClients) {
+        _pageController.jumpToPage(_currentPageIndex);
+      }
+    });
+    return true;
+  }
+
+  Future<void> _storePaginationSafely({
+    required String chapterId,
+    required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
+    required List<ReaderPage> pages,
+  }) async {
+    try {
+      await _paginationCache.store(
+        bookId: widget.document.book.id,
+        chapterId: chapterId,
+        spec: spec,
+        identity: identity,
+        pages: pages,
+      );
+    } on Object catch (error) {
+      debugPrint('Could not cache reader pagination: $error');
     }
   }
 
@@ -716,8 +842,92 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     for (var index = 0; index < _chapterIndex; index += 1) {
       consumed += widget.document.chapters[index].lengthUtf16;
     }
-    final total = widget.document.book.totalLength;
+    final total = _totalBookLength;
     return total <= 0 ? 0 : (consumed / total).clamp(0, 1);
+  }
+
+  int get _totalBookLength => widget.document.chapters.fold<int>(
+    0,
+    (int total, StoredChapter chapter) => total + chapter.lengthUtf16,
+  );
+
+  _ReaderLocation _locationForBookProgress(double progress) {
+    final chapters = widget.document.chapters;
+    if (chapters.isEmpty) {
+      return const _ReaderLocation(chapterIndex: 0, textOffset: 0);
+    }
+    final total = _totalBookLength;
+    if (total <= 0) {
+      return _ReaderLocation(chapterIndex: _chapterIndex, textOffset: 0);
+    }
+    final target = (progress.clamp(0, 1) * math.max(0, total - 1)).round();
+    var consumed = 0;
+    for (var index = 0; index < chapters.length; index += 1) {
+      final chapterLength = chapters[index].lengthUtf16;
+      final isLast = index == chapters.length - 1;
+      if (target < consumed + chapterLength || isLast) {
+        return _ReaderLocation(
+          chapterIndex: index,
+          textOffset: (target - consumed).clamp(
+            0,
+            math.max(0, chapterLength - 1),
+          ),
+        );
+      }
+      consumed += chapterLength;
+    }
+    return _ReaderLocation(
+      chapterIndex: chapters.length - 1,
+      textOffset: math.max(0, chapters.last.lengthUtf16 - 1),
+    );
+  }
+
+  int _chapterNumberForBookProgress(double progress) {
+    return _locationForBookProgress(progress).chapterIndex + 1;
+  }
+
+  void _seekToBookProgress(double progress) {
+    final location = _locationForBookProgress(progress);
+    unawaited(HapticFeedback.selectionClick());
+    if (location.chapterIndex != _chapterIndex) {
+      _openChapter(
+        location.chapterIndex,
+        textOffset: location.textOffset,
+        rememberCurrentLocation: true,
+      );
+      return;
+    }
+
+    final pages = _pages;
+    final pageIndex = pages?.indexWhere(
+      (ReaderPage page) =>
+          location.textOffset >= page.startOffset &&
+          location.textOffset < page.endOffset,
+    );
+    _dismissWordPopover();
+    _clearSelection();
+    if (pageIndex == null || pageIndex < 0) {
+      setState(() {
+        _currentPageIndex = 0;
+        _currentTextOffset = location.textOffset;
+        _pages = null;
+        _layoutKey = null;
+        _pendingLayoutKey = null;
+        _paginationComplete = false;
+        _paginationGeneration += 1;
+      });
+      unawaited(_persistReaderPosition());
+      return;
+    }
+    setState(() {
+      _currentTextOffset = location.textOffset;
+      _currentPageIndex = pageIndex;
+    });
+    _turnToPage(
+      pageIndex,
+      animate: ref.read(readerPreferencesProvider).pageAnimationEnabled,
+    );
+    unawaited(_persistReaderPosition());
   }
 
   void _showWordPopover({
@@ -884,7 +1094,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
         savesAsWord: savesAsWord,
         savedOccurrence: savedOccurrence,
         onSave: canSavePhrase
-            ? (TextAssistance translation) async {
+            ? (FragmentTranslation translation) async {
                 final service = ref.read(vocabularyServiceProvider);
                 final vocabularyId = await service.savePhrase(
                   request: request,
@@ -1520,7 +1730,7 @@ final class _TextAssistanceSheet extends ConsumerStatefulWidget {
   final String sourceText;
   final bool savesAsWord;
   final StoredWordOccurrence? savedOccurrence;
-  final Future<StoredWordOccurrence?> Function(TextAssistance translation)?
+  final Future<StoredWordOccurrence?> Function(FragmentTranslation translation)?
   onSave;
   final Future<void> Function(StoredWordOccurrence occurrence)? onRemove;
 
@@ -1533,8 +1743,8 @@ final class _TextAssistanceSheetState
     extends ConsumerState<_TextAssistanceSheet> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
-  late Future<TextAssistance> _translation;
-  Future<TextAssistance>? _explanation;
+  late Future<FragmentTranslation> _translation;
+  Future<TextExplanation>? _explanation;
   StoredWordOccurrence? _savedOccurrence;
   var _saving = false;
 
@@ -1544,7 +1754,7 @@ final class _TextAssistanceSheetState
   void initState() {
     super.initState();
     _savedOccurrence = widget.savedOccurrence;
-    _translation = _load(TextAssistanceKind.fragmentTranslation);
+    _translation = _loadTranslation();
   }
 
   @override
@@ -1627,21 +1837,19 @@ final class _TextAssistanceSheetState
               ),
             ),
             const SizedBox(height: 14),
-            FutureBuilder<TextAssistance>(
+            FutureBuilder<FragmentTranslation>(
               future: _translation,
               builder:
                   (
                     BuildContext context,
-                    AsyncSnapshot<TextAssistance> snapshot,
+                    AsyncSnapshot<FragmentTranslation> snapshot,
                   ) => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _buildResult(
+                      _buildTranslationResult(
                         snapshot: snapshot,
                         onRetry: () => setState(() {
-                          _translation = _load(
-                            TextAssistanceKind.fragmentTranslation,
-                          );
+                          _translation = _loadTranslation();
                         }),
                         style: theme.textTheme.bodyLarge?.copyWith(
                           fontFamily: 'Literata',
@@ -1724,18 +1932,17 @@ final class _TextAssistanceSheetState
                 ],
               ),
               const SizedBox(height: 10),
-              FutureBuilder<TextAssistance>(
+              FutureBuilder<TextExplanation>(
                 future: explanation,
                 builder:
                     (
                       BuildContext context,
-                      AsyncSnapshot<TextAssistance> snapshot,
-                    ) => _buildResult(
+                      AsyncSnapshot<TextExplanation> snapshot,
+                    ) => _buildExplanationResult(
                       snapshot: snapshot,
                       onRetry: () => setState(() {
-                        _explanation = _load(TextAssistanceKind.explanation);
+                        _explanation = _loadExplanation();
                       }),
-                      style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
                     ),
               ),
             ],
@@ -1745,44 +1952,104 @@ final class _TextAssistanceSheetState
     );
   }
 
-  Widget _buildResult({
-    required AsyncSnapshot<TextAssistance> snapshot,
+  Widget _buildTranslationResult({
+    required AsyncSnapshot<FragmentTranslation> snapshot,
     required VoidCallback onRetry,
     TextStyle? style,
   }) {
-    final strings = AppLocalizations.of(context);
     if (snapshot.connectionState != ConnectionState.done) {
       return const _AssistanceSkeleton();
     }
     if (snapshot.hasError || snapshot.data == null) {
-      final message = switch (snapshot.error) {
-        TranslationException(failure: TranslationFailure.offline) =>
-          strings.translationOffline,
-        TranslationException(failure: TranslationFailure.invalidResponse) =>
-          strings.translationInvalid,
-        _ => strings.translationUnavailable,
-      };
-      return Row(
-        children: <Widget>[
-          Expanded(child: Text(message)),
-          IconButton(
-            tooltip: strings.retry,
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      );
+      return _buildAssistanceFailure(snapshot.error, onRetry);
     }
     return Text(
-      snapshot.requireData.content,
+      snapshot.requireData.translation,
       style: style ?? Theme.of(context).textTheme.bodyLarge,
+    );
+  }
+
+  Widget _buildExplanationResult({
+    required AsyncSnapshot<TextExplanation> snapshot,
+    required VoidCallback onRetry,
+  }) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const _AssistanceSkeleton();
+    }
+    if (snapshot.hasError || snapshot.data == null) {
+      return _buildAssistanceFailure(snapshot.error, onRetry);
+    }
+    final explanation = snapshot.requireData;
+    final strings = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _ExplanationSection(
+          label: strings.explanationSummaryLabel,
+          content: explanation.summary,
+          emphasized: true,
+        ),
+        _ExplanationSection(
+          label: strings.explanationMeaningLabel,
+          content: explanation.meaningInContext,
+        ),
+        _ExplanationSection(
+          label: strings.explanationBreakdownLabel,
+          content: explanation.breakdown,
+        ),
+        if (explanation.literalTranslation.isNotEmpty)
+          _ExplanationSection(
+            label: strings.explanationLiteralLabel,
+            content: explanation.literalTranslation,
+          ),
+        _ExplanationSection(
+          label: strings.explanationNaturalLabel,
+          content: explanation.naturalTranslation,
+        ),
+        if (explanation.examples.isNotEmpty)
+          _ExplanationSection(
+            label: strings.explanationExamplesLabel,
+            content: explanation.examples
+                .map(
+                  (TextExplanationExample example) =>
+                      '${example.source}\n${example.translation}',
+                )
+                .join('\n\n'),
+          ),
+        if (explanation.commonMistake.isNotEmpty)
+          _ExplanationSection(
+            label: strings.explanationCommonMistakeLabel,
+            content: explanation.commonMistake,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAssistanceFailure(Object? error, VoidCallback onRetry) {
+    final strings = AppLocalizations.of(context);
+    final message = switch (error) {
+      TranslationException(failure: TranslationFailure.offline) =>
+        strings.translationOffline,
+      TranslationException(failure: TranslationFailure.invalidResponse) =>
+        strings.translationInvalid,
+      _ => strings.translationUnavailable,
+    };
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(message)),
+        IconButton(
+          tooltip: strings.retry,
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
     );
   }
 
   void _showExplanation() {
     if (_explanation == null) {
       setState(() {
-        _explanation = _load(TextAssistanceKind.explanation);
+        _explanation = _loadExplanation();
       });
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1798,7 +2065,7 @@ final class _TextAssistanceSheetState
     });
   }
 
-  Future<void> _saveSelection(TextAssistance translation) async {
+  Future<void> _saveSelection(FragmentTranslation translation) async {
     final onSave = widget.onSave;
     if (onSave == null) {
       return;
@@ -1843,8 +2110,59 @@ final class _TextAssistanceSheetState
     }
   }
 
-  Future<TextAssistance> _load(TextAssistanceKind kind) {
-    return ref.read(textAssistantProvider).assistText(widget.request, kind);
+  Future<FragmentTranslation> _loadTranslation() =>
+      ref.read(textAssistantProvider).translateFragment(widget.request);
+
+  Future<TextExplanation> _loadExplanation() =>
+      ref.read(textAssistantProvider).explainText(widget.request);
+}
+
+final class _ExplanationSection extends StatelessWidget {
+  const _ExplanationSection({
+    required this.label,
+    required this.content,
+    this.emphasized = false,
+  });
+
+  final String label;
+  final String content;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: emphasized
+              ? colors.secondaryContainer.withValues(alpha: 0.48)
+              : colors.surfaceContainerHighest.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                content,
+                style: theme.textTheme.bodyLarge?.copyWith(height: 1.45),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1938,6 +2256,8 @@ final class _ReaderChrome extends StatelessWidget {
     required this.onReturnToPreviousLocation,
     required this.onContents,
     required this.onSettings,
+    required this.onProgressChanged,
+    required this.chapterForProgress,
   });
 
   final String title;
@@ -1953,6 +2273,8 @@ final class _ReaderChrome extends StatelessWidget {
   final VoidCallback onReturnToPreviousLocation;
   final VoidCallback onContents;
   final VoidCallback onSettings;
+  final ValueChanged<double> onProgressChanged;
+  final int Function(double progress) chapterForProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -1961,74 +2283,118 @@ final class _ReaderChrome extends StatelessWidget {
     final chapterName = chapterTitle?.trim().isNotEmpty ?? false
         ? chapterTitle!
         : '${strings.chapter} $chapterNumber';
-    final pageLabel = '$pageNumber/${pageCount?.toString() ?? '…'}';
     return SizedBox.expand(
       child: Stack(
         children: <Widget>[
           Positioned(
-            left: 12,
-            right: 12,
-            top: safePadding.top + 8,
+            left: 16,
+            right: 16,
+            top: safePadding.top + 4,
             child: DecoratedBox(
               key: const ValueKey<String>('reader-top-chrome'),
               decoration: BoxDecoration(
-                color: palette.chrome.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: palette.border),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 16,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
+                color: palette.chrome.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.62),
+                ),
               ),
               child: SizedBox(
-                height: 50,
+                height: 44,
                 child: Row(
                   children: <Widget>[
-                    _ChromeButton(
-                      icon: Icons.arrow_back_rounded,
-                      onTap: onBack,
-                    ),
-                    if (canReturnToPreviousLocation)
-                      _ChromeButton(
-                        icon: Icons.history_rounded,
-                        onTap: onReturnToPreviousLocation,
-                      ),
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onContents,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
+                    SizedBox(
+                      width: 88,
+                      child: Row(
+                        children: <Widget>[
+                          _ChromeButton(
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).backButtonTooltip,
+                            onTap: onBack,
+                            child: Icon(
+                              Icons.arrow_back_rounded,
+                              color: palette.text,
+                            ),
+                          ),
+                          if (canReturnToPreviousLocation)
+                            _ChromeButton(
+                              tooltip: strings.returnToPreviousLocation,
+                              onTap: onReturnToPreviousLocation,
+                              child: Icon(
+                                Icons.history_rounded,
                                 color: palette.text,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13,
                               ),
                             ),
-                            Text(
-                              '$chapterName · $chapterNumber/$chapterCount',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: palette.mutedText,
-                                fontSize: 10,
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Semantics(
+                        button: true,
+                        label: strings.contents,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onContents,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.text,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5,
+                                ),
                               ),
-                            ),
-                          ],
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  Flexible(
+                                    child: Text(
+                                      '$chapterName · $chapterNumber/$chapterCount',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: palette.mutedText,
+                                        fontSize: 9.5,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: palette.mutedText,
+                                    size: 13,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    _ChromeButton(
-                      icon: Icons.text_fields_rounded,
-                      onTap: onSettings,
+                    SizedBox(
+                      width: 88,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _ChromeButton(
+                          tooltip: strings.readerSettings,
+                          onTap: onSettings,
+                          child: Text(
+                            'Aa',
+                            style: TextStyle(
+                              color: palette.text,
+                              fontFamily: 'Literata',
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -2036,46 +2402,17 @@ final class _ReaderChrome extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 28,
-            right: 28,
-            bottom: safePadding.bottom + 10,
-            child: DecoratedBox(
-              key: const ValueKey<String>('reader-bottom-progress'),
-              decoration: BoxDecoration(
-                color: palette.chrome.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: palette.border),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 2,
-                          color: palette.accent,
-                          backgroundColor: palette.border,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '${(progress * 100).round()}% · $pageLabel',
-                      style: TextStyle(
-                        color: palette.mutedText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            left: 22,
+            right: 22,
+            bottom: safePadding.bottom + 8,
+            child: _ReaderProgress(
+              progress: progress,
+              pageNumber: pageNumber,
+              pageCount: pageCount,
+              chapterCount: chapterCount,
+              chapterForProgress: chapterForProgress,
+              palette: palette,
+              onChanged: onProgressChanged,
             ),
           ),
         ],
@@ -2085,19 +2422,133 @@ final class _ReaderChrome extends StatelessWidget {
 }
 
 final class _ChromeButton extends StatelessWidget {
-  const _ChromeButton({required this.icon, required this.onTap});
+  const _ChromeButton({
+    required this.child,
+    required this.tooltip,
+    required this.onTap,
+  });
 
-  final IconData icon;
+  final Widget child;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: 46,
+      dimension: 44,
       child: IconButton(
         onPressed: onTap,
+        tooltip: tooltip,
         visualDensity: VisualDensity.compact,
-        icon: Icon(icon, size: 20),
+        iconSize: 19,
+        icon: child,
+      ),
+    );
+  }
+}
+
+final class _ReaderProgress extends StatefulWidget {
+  const _ReaderProgress({
+    required this.progress,
+    required this.pageNumber,
+    required this.pageCount,
+    required this.chapterCount,
+    required this.chapterForProgress,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  final double progress;
+  final int pageNumber;
+  final int? pageCount;
+  final int chapterCount;
+  final int Function(double progress) chapterForProgress;
+  final ReaderPalette palette;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_ReaderProgress> createState() => _ReaderProgressState();
+}
+
+final class _ReaderProgressState extends State<_ReaderProgress> {
+  double? _dragProgress;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppLocalizations.of(context);
+    final value = (_dragProgress ?? widget.progress).clamp(0.0, 1.0);
+    final percent = (value * 100).round();
+    final pageCount = widget.pageCount?.toString() ?? '…';
+    final preview = strings.readerProgressPreview(
+      percent,
+      widget.chapterForProgress(value),
+      widget.chapterCount,
+    );
+    final label = _dragProgress == null
+        ? strings.readerCompactProgress(widget.pageNumber, pageCount, percent)
+        : preview;
+    return DecoratedBox(
+      key: const ValueKey<String>('reader-bottom-progress'),
+      decoration: BoxDecoration(
+        color: widget.palette.chrome.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: widget.palette.border.withValues(alpha: 0.52),
+        ),
+      ),
+      child: SizedBox(
+        height: 36,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8, right: 12),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    activeTrackColor: widget.palette.accent,
+                    inactiveTrackColor: widget.palette.border,
+                    thumbColor: widget.palette.accent,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 5,
+                    ),
+                    overlayColor: widget.palette.accent.withValues(alpha: 0.1),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                    valueIndicatorColor: widget.palette.popover,
+                    valueIndicatorTextStyle: TextStyle(
+                      color: widget.palette.text,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    showValueIndicator: ShowValueIndicator.onlyForContinuous,
+                  ),
+                  child: Slider(
+                    value: value,
+                    label: preview,
+                    onChanged: (double next) {
+                      setState(() => _dragProgress = next);
+                    },
+                    onChangeEnd: (double next) {
+                      setState(() => _dragProgress = null);
+                      widget.onChanged(next);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: widget.palette.mutedText,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2131,28 +2582,51 @@ final class _ReaderSettingsSheet extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 18),
+            Text(
+              strings.paragraphStyle,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<ReaderParagraphStyle>(
+              segments: <ButtonSegment<ReaderParagraphStyle>>[
+                ButtonSegment<ReaderParagraphStyle>(
+                  value: ReaderParagraphStyle.book,
+                  label: Text(strings.bookParagraphStyle),
+                ),
+                ButtonSegment<ReaderParagraphStyle>(
+                  value: ReaderParagraphStyle.modern,
+                  label: Text(strings.modernParagraphStyle),
+                ),
+              ],
+              selected: <ReaderParagraphStyle>{preferences.paragraphStyle},
+              onSelectionChanged: (Set<ReaderParagraphStyle> value) {
+                notifier.setParagraphStyle(value.single);
+              },
+              showSelectedIcon: false,
+            ),
+            const SizedBox(height: 12),
             _SettingSlider(
               label: strings.fontSize,
               value: preferences.fontSize,
               min: 15,
-              max: 26,
-              divisions: 11,
+              max: 24,
+              divisions: 9,
               onChanged: notifier.setFontSize,
             ),
             _SettingSlider(
               label: strings.lineHeight,
               value: preferences.lineHeight,
               min: 1.3,
-              max: 1.9,
-              divisions: 6,
+              max: 1.8,
+              divisions: 5,
               onChanged: notifier.setLineHeight,
             ),
             _SettingSlider(
               label: strings.margins,
               value: preferences.horizontalMargin,
               min: 16,
-              max: 42,
-              divisions: 13,
+              max: 36,
+              divisions: 10,
               onChanged: notifier.setHorizontalMargin,
             ),
             _SettingSlider(
@@ -2278,7 +2752,7 @@ final class _SelectionActions extends StatelessWidget {
     return Positioned(
       left: 0,
       right: 0,
-      bottom: MediaQuery.paddingOf(context).bottom + 58,
+      bottom: MediaQuery.paddingOf(context).bottom + 52,
       child: IgnorePointer(
         ignoring: !visible,
         child: AnimatedSlide(

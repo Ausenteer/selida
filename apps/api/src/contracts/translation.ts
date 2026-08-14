@@ -25,11 +25,31 @@ export interface TextAssistanceRequest {
   context: string;
 }
 
-export interface TextAssistanceResult {
-  content: string;
+export interface FragmentTranslationResult {
+  translation: string;
 }
 
-export interface TextAssistanceResponse extends TextAssistanceResult {
+export interface FragmentTranslationResponse
+  extends FragmentTranslationResult {
+  cached: boolean;
+}
+
+export interface TextExplanationExample {
+  source: string;
+  translation: string;
+}
+
+export interface TextExplanationResult {
+  summary: string;
+  meaningInContext: string;
+  breakdown: string;
+  literalTranslation: string;
+  naturalTranslation: string;
+  examples: TextExplanationExample[];
+  commonMistake: string;
+}
+
+export interface TextExplanationResponse extends TextExplanationResult {
   cached: boolean;
 }
 
@@ -90,12 +110,49 @@ export const textAssistanceBodySchema = {
   },
 } as const;
 
-export const textAssistanceResponseSchema = {
+export const fragmentTranslationResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['content', 'cached'],
+  required: ['translation', 'cached'],
   properties: {
-    content: {type: 'string'},
+    translation: {type: 'string'},
+    cached: {type: 'boolean'},
+  },
+} as const;
+
+export const textExplanationResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'summary',
+    'meaningInContext',
+    'breakdown',
+    'literalTranslation',
+    'naturalTranslation',
+    'examples',
+    'commonMistake',
+    'cached',
+  ],
+  properties: {
+    summary: {type: 'string'},
+    meaningInContext: {type: 'string'},
+    breakdown: {type: 'string'},
+    literalTranslation: {type: 'string'},
+    naturalTranslation: {type: 'string'},
+    examples: {
+      type: 'array',
+      maxItems: 2,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['source', 'translation'],
+        properties: {
+          source: {type: 'string'},
+          translation: {type: 'string'},
+        },
+      },
+    },
+    commonMistake: {type: 'string'},
     cached: {type: 'boolean'},
   },
 } as const;

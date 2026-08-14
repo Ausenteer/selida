@@ -71,7 +71,7 @@ test('fragment prompt translates only selected text and treats context as refere
           {
             content: {
               parts: [
-                {text: JSON.stringify({content: 'предсмертный'})},
+                {text: JSON.stringify({translation: 'предсмертный'})},
               ],
             },
           },
@@ -96,10 +96,71 @@ test('fragment prompt translates only selected text and treats context as refere
   });
 
   const instruction = requestBody?.systemInstruction?.parts?.[0]?.text ?? '';
-  assert.match(instruction, /ONLY the value of selectedText/);
+  assert.match(instruction, /ONLY the exact value of selectedText/);
   assert.match(instruction, /never translate it/);
   const userText = requestBody?.contents?.[0]?.parts?.[0]?.text ?? '{}';
   const userPayload = JSON.parse(userText) as {selectedText?: string};
   assert.equal(userPayload.selectedText, 'near-death');
-  assert.equal(result.content, 'предсмертный');
+  assert.equal(result.translation, 'предсмертный');
+});
+
+test('explanation prompt stays scoped to selected text and returns sections', async () => {
+  let requestBody:
+    | {
+        systemInstruction?: {parts?: Array<{text?: string}>};
+        contents?: Array<{parts?: Array<{text?: string}>}>;
+      }
+    | undefined;
+  const fetcher: typeof fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    summary: 'Состояние, близкое к смерти.',
+                    meaningInContext: 'Описывает сны после опасного опыта.',
+                    breakdown: 'near + death образуют составное определение.',
+                    literalTranslation: 'близкий к смерти',
+                    naturalTranslation: 'предсмертный',
+                    examples: [
+                      {
+                        source: 'a near-death experience',
+                        translation: 'околосмертный опыт',
+                      },
+                    ],
+                    commonMistake: 'Не переводите всё предложение.',
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      {status: 200, headers: {'content-type': 'application/json'}},
+    );
+  };
+  const provider = new GeminiTranslationProvider(
+    'test-key',
+    'test-model',
+    'test-model',
+    fetcher,
+  );
+
+  const result = await provider.explainText({
+    sourceLanguage: 'en',
+    targetLanguage: 'ru',
+    interfaceLanguage: 'ru',
+    source: 'near-death',
+    context: 'My near-death dreams are ridiculous.',
+  });
+
+  const instruction = requestBody?.systemInstruction?.parts?.[0]?.text ?? '';
+  assert.match(instruction, /Explain ONLY selectedText/);
+  assert.match(instruction, /do not explain or translate the whole/);
+  assert.equal(result.naturalTranslation, 'предсмертный');
+  assert.equal(result.examples.length, 1);
 });

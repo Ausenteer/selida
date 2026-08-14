@@ -5,7 +5,8 @@ import type {TranslationProvider} from './ai/translation_provider.js';
 import {buildApp} from './app.js';
 import {MemoryTranslationCache} from './cache/translation_cache.js';
 import type {
-  TextAssistanceResult,
+  FragmentTranslationResult,
+  TextExplanationResult,
   WordTranslationRequest,
   WordTranslationResult,
 } from './contracts/translation.js';
@@ -22,11 +23,11 @@ test('translation route validates and caches contextual results', async () => {
         formAnalysis: 'Прошедшее время.',
       };
     },
-    async translateFragment(): Promise<TextAssistanceResult> {
-      return {content: 'Я читала книгу.'};
+    async translateFragment(): Promise<FragmentTranslationResult> {
+      return {translation: 'Я читала книгу.'};
     },
-    async explainText(): Promise<TextAssistanceResult> {
-      return {content: 'Форма прошедшего времени.'};
+    async explainText(): Promise<TextExplanationResult> {
+      return explanationResult('Форма прошедшего времени.');
     },
   };
   const app = buildApp({provider, cache: new MemoryTranslationCache()});
@@ -62,10 +63,10 @@ test('translation route rejects unsupported language pairs', async () => {
     async translateWord(): Promise<WordTranslationResult> {
       throw new Error('must not be called');
     },
-    async translateFragment(): Promise<TextAssistanceResult> {
+    async translateFragment(): Promise<FragmentTranslationResult> {
       throw new Error('must not be called');
     },
-    async explainText(): Promise<TextAssistanceResult> {
+    async explainText(): Promise<TextExplanationResult> {
       throw new Error('must not be called');
     },
   };
@@ -93,13 +94,13 @@ test('fragment translation and explanation use separate caches', async () => {
     async translateWord(): Promise<WordTranslationResult> {
       throw new Error('must not be called');
     },
-    async translateFragment(): Promise<TextAssistanceResult> {
+    async translateFragment(): Promise<FragmentTranslationResult> {
       fragmentCalls += 1;
-      return {content: 'Она шла домой.'};
+      return {translation: 'шла домой'};
     },
-    async explainText(): Promise<TextAssistanceResult> {
+    async explainText(): Promise<TextExplanationResult> {
       explanationCalls += 1;
-      return {content: 'Past Continuous описывает процесс.'};
+      return explanationResult('Past Continuous описывает процесс.');
     },
   };
   const app = buildApp({provider, cache: new MemoryTranslationCache()});
@@ -128,10 +129,25 @@ test('fragment translation and explanation use separate caches', async () => {
   });
 
   assert.equal(fragment.statusCode, 200);
-  assert.equal(fragment.json().content, 'Она шла домой.');
+  assert.equal(fragment.json().translation, 'шла домой');
   assert.equal(fragmentCached.json().cached, true);
-  assert.equal(explanation.json().content, 'Past Continuous описывает процесс.');
+  assert.equal(
+    explanation.json().meaningInContext,
+    'Past Continuous описывает процесс.',
+  );
   assert.equal(fragmentCalls, 1);
   assert.equal(explanationCalls, 1);
   await app.close();
 });
+
+function explanationResult(meaningInContext: string): TextExplanationResult {
+  return {
+    summary: 'Краткое объяснение.',
+    meaningInContext,
+    breakdown: 'Разбор конструкции.',
+    literalTranslation: '',
+    naturalTranslation: 'шла домой',
+    examples: [],
+    commonMistake: '',
+  };
+}

@@ -357,6 +357,123 @@ final class AppDatabase extends _$AppDatabase {
     return query.getSingleOrNull();
   }
 
+  Future<StoredPaginationProfile?> paginationProfileFor({
+    required String bookId,
+    required String fingerprint,
+    required int algorithmVersion,
+  }) {
+    final query = select(paginationProfiles)
+      ..where(
+        (PaginationProfiles row) =>
+            row.bookId.equals(bookId) &
+            row.fingerprint.equals(fingerprint) &
+            row.algorithmVersion.equals(algorithmVersion),
+      )
+      ..orderBy(<OrderingTerm Function(PaginationProfiles)>[
+        (PaginationProfiles row) => OrderingTerm.desc(row.createdAt),
+      ])
+      ..limit(1);
+    return query.getSingleOrNull();
+  }
+
+  Future<List<StoredPage>> pagesForPaginationProfile({
+    required String profileId,
+    required String chapterId,
+  }) {
+    final query = select(bookPages)
+      ..where(
+        (BookPages row) =>
+            row.profileId.equals(profileId) & row.chapterId.equals(chapterId),
+      )
+      ..orderBy(<OrderingTerm Function(BookPages)>[
+        (BookPages row) => OrderingTerm.asc(row.pageIndex),
+      ]);
+    return query.get();
+  }
+
+  Future<void> savePaginationPages({
+    required String profileId,
+    required String bookId,
+    required String chapterId,
+    required String fingerprint,
+    required double viewportWidth,
+    required double viewportHeight,
+    required String settingsJson,
+    required int algorithmVersion,
+    required List<({String id, int pageIndex, int startOffset, int endOffset})>
+    pages,
+    int maximumProfilesPerBook = 6,
+  }) {
+    return transaction(() async {
+      final existing = await paginationProfileFor(
+        bookId: bookId,
+        fingerprint: fingerprint,
+        algorithmVersion: algorithmVersion,
+      );
+      final resolvedProfileId = existing?.id ?? profileId;
+      final now = DateTime.now().toUtc();
+      if (existing == null) {
+        await into(paginationProfiles).insert(
+          PaginationProfilesCompanion.insert(
+            id: resolvedProfileId,
+            bookId: bookId,
+            fingerprint: fingerprint,
+            viewportWidth: viewportWidth,
+            viewportHeight: viewportHeight,
+            settingsJson: settingsJson,
+            algorithmVersion: algorithmVersion,
+            createdAt: Value<DateTime>(now),
+          ),
+        );
+      } else {
+        await (update(paginationProfiles)..where(
+              (PaginationProfiles row) => row.id.equals(resolvedProfileId),
+            ))
+            .write(
+              PaginationProfilesCompanion(
+                viewportWidth: Value<double>(viewportWidth),
+                viewportHeight: Value<double>(viewportHeight),
+                settingsJson: Value<String>(settingsJson),
+                createdAt: Value<DateTime>(now),
+              ),
+            );
+      }
+
+      await (delete(bookPages)..where(
+            (BookPages row) =>
+                row.profileId.equals(resolvedProfileId) &
+                row.chapterId.equals(chapterId),
+          ))
+          .go();
+      await batch((Batch batch) {
+        batch.insertAll(bookPages, <BookPagesCompanion>[
+          for (final page in pages)
+            BookPagesCompanion.insert(
+              id: page.id,
+              profileId: resolvedProfileId,
+              chapterId: chapterId,
+              pageIndex: page.pageIndex,
+              startOffset: page.startOffset,
+              endOffset: page.endOffset,
+            ),
+        ]);
+      });
+
+      final profiles =
+          await (select(paginationProfiles)
+                ..where((PaginationProfiles row) => row.bookId.equals(bookId))
+                ..orderBy(<OrderingTerm Function(PaginationProfiles)>[
+                  (PaginationProfiles row) => OrderingTerm.desc(row.createdAt),
+                ]))
+              .get();
+      for (final profile in profiles.skip(maximumProfilesPerBook)) {
+        await (delete(
+          paginationProfiles,
+        )..where((PaginationProfiles row) => row.id.equals(profile.id))).go();
+      }
+    });
+  }
+
   Future<String?> localSettingValue(String key) async {
     final query = select(localSettings)
       ..where((LocalSettings row) => row.key.equals(key));

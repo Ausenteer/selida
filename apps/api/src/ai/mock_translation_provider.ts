@@ -1,6 +1,7 @@
 import type {
+  FragmentTranslationResult,
   TextAssistanceRequest,
-  TextAssistanceResult,
+  TextExplanationResult,
   WordTranslationRequest,
   WordTranslationResult,
 } from '../contracts/translation.js';
@@ -37,15 +38,21 @@ export class MockTranslationProvider implements TranslationProvider {
 
   async translateFragment(
     request: TextAssistanceRequest,
-  ): Promise<TextAssistanceResult> {
-    return {content: `Перевод фрагмента: ${request.source}`};
+  ): Promise<FragmentTranslationResult> {
+    return {translation: `Перевод фрагмента: ${request.source}`};
   }
 
   async explainText(
     request: TextAssistanceRequest,
-  ): Promise<TextAssistanceResult> {
+  ): Promise<TextExplanationResult> {
     return {
-      content: `Демонстрационное объяснение конструкции: ${request.source}`,
+      summary: `Значение: ${request.source}`,
+      meaningInContext: 'Демонстрационное объяснение в контексте.',
+      breakdown: 'Разбор конструкции локальным провайдером.',
+      literalTranslation: '',
+      naturalTranslation: `Перевод фрагмента: ${request.source}`,
+      examples: [],
+      commonMistake: '',
     };
   }
 }

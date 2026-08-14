@@ -18,6 +18,9 @@
   "delete": "Delete",
   "unknownAuthor": "Unknown author",
   "readerSettings": "Reading settings",
+  "paragraphStyle": "Paragraphs",
+  "bookParagraphStyle": "Book",
+  "modernParagraphStyle": "Modern",
   "fontSize": "Text size",
   "lineHeight": "Line spacing",
   "margins": "Margins",
@@ -31,6 +34,7 @@
   "sepiaTheme": "Sepia",
   "darkTheme": "Dark",
   "contents": "Contents",
+  "returnToPreviousLocation": "Return to previous location",
   "mappingPrototype": "Word position: {offset}",
   "@mappingPrototype": {
     "placeholders": {"offset": {"type": "int"}}
@@ -56,6 +60,13 @@
   "fragmentTranslationTitle": "Translation",
   "explainText": "Explain",
   "explanationTitle": "Explanation",
+  "explanationSummaryLabel": "In short",
+  "explanationMeaningLabel": "In this context",
+  "explanationBreakdownLabel": "How it works",
+  "explanationLiteralLabel": "Literally",
+  "explanationNaturalLabel": "Natural translation",
+  "explanationExamplesLabel": "Examples",
+  "explanationCommonMistakeLabel": "Common mistake",
   "lemmaDetails": "{lemma} · {partOfSpeech}",
   "@lemmaDetails": {
     "placeholders": {
@@ -83,6 +94,22 @@
     "placeholders": {
       "page": {"type": "int"},
       "pageCount": {"type": "String"},
+      "chapter": {"type": "int"},
+      "chapterCount": {"type": "int"}
+    }
+  },
+  "readerCompactProgress": "{page} of {pageCount} · {percent}%",
+  "@readerCompactProgress": {
+    "placeholders": {
+      "page": {"type": "int"},
+      "pageCount": {"type": "String"},
+      "percent": {"type": "int"}
+    }
+  },
+  "readerProgressPreview": "{percent}% · chapter {chapter} of {chapterCount}",
+  "@readerProgressPreview": {
+    "placeholders": {
+      "percent": {"type": "int"},
       "chapter": {"type": "int"},
       "chapterCount": {"type": "int"}
     }

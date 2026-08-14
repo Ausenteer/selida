@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/core/database/database_provider.dart';
+import 'package:selida/features/reader/domain/reader_page.dart';
 import 'package:selida/features/reader/domain/reader_preferences.dart';
 
 void main() {
@@ -22,7 +23,8 @@ void main() {
       ..setHorizontalMargin(32)
       ..setBrightness(0.7)
       ..setPageAnimationEnabled(value: false)
-      ..setTheme(ReaderTheme.dark);
+      ..setTheme(ReaderTheme.dark)
+      ..setParagraphStyle(ReaderParagraphStyle.modern);
 
     await _waitFor(
       () async =>
@@ -48,6 +50,7 @@ void main() {
     expect(restored.brightness, 0.7);
     expect(restored.pageAnimationEnabled, isFalse);
     expect(restored.theme, ReaderTheme.dark);
+    expect(restored.paragraphStyle, ReaderParagraphStyle.modern);
   });
 }
 

@@ -65,6 +65,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerSettings => 'Reading settings';
 
   @override
+  String get paragraphStyle => 'Paragraphs';
+
+  @override
+  String get bookParagraphStyle => 'Book';
+
+  @override
+  String get modernParagraphStyle => 'Modern';
+
+  @override
   String get fontSize => 'Text size';
 
   @override
@@ -102,6 +111,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get contents => 'Contents';
+
+  @override
+  String get returnToPreviousLocation => 'Return to previous location';
 
   @override
   String mappingPrototype(int offset) {
@@ -167,6 +179,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get explanationTitle => 'Explanation';
 
   @override
+  String get explanationSummaryLabel => 'In short';
+
+  @override
+  String get explanationMeaningLabel => 'In this context';
+
+  @override
+  String get explanationBreakdownLabel => 'How it works';
+
+  @override
+  String get explanationLiteralLabel => 'Literally';
+
+  @override
+  String get explanationNaturalLabel => 'Natural translation';
+
+  @override
+  String get explanationExamplesLabel => 'Examples';
+
+  @override
+  String get explanationCommonMistakeLabel => 'Common mistake';
+
+  @override
   String lemmaDetails(String lemma, String partOfSpeech) {
     return '$lemma · $partOfSpeech';
   }
@@ -225,6 +258,16 @@ class AppLocalizationsEn extends AppLocalizations {
     int chapterCount,
   ) {
     return 'Page $page of $pageCount · chapter $chapter of $chapterCount';
+  }
+
+  @override
+  String readerCompactProgress(int page, String pageCount, int percent) {
+    return '$page of $pageCount · $percent%';
+  }
+
+  @override
+  String readerProgressPreview(int percent, int chapter, int chapterCount) {
+    return '$percent% · chapter $chapter of $chapterCount';
   }
 
   @override

@@ -111,25 +111,141 @@ final class TextAssistanceRequest {
 }
 
 @immutable
-final class TextAssistance {
-  const TextAssistance({required this.content, required this.fromCache});
+final class FragmentTranslation {
+  const FragmentTranslation({
+    required this.translation,
+    required this.fromCache,
+  });
 
-  factory TextAssistance.fromJson(Map<String, Object?> json) {
-    final content = json['content'];
-    if (content is! String || content.trim().isEmpty) {
-      throw const FormatException('Invalid text assistance response');
+  factory FragmentTranslation.fromJson(Map<String, Object?> json) {
+    final translation = json['translation'];
+    if (translation is! String || translation.trim().isEmpty) {
+      throw const FormatException('Invalid fragment translation response');
     }
-    return TextAssistance(
-      content: content.trim(),
+    return FragmentTranslation(
+      translation: translation.trim(),
       fromCache: json['cached'] == true,
     );
   }
 
-  final String content;
+  final String translation;
   final bool fromCache;
 
-  TextAssistance asCached() =>
-      TextAssistance(content: content, fromCache: true);
+  FragmentTranslation asCached() =>
+      FragmentTranslation(translation: translation, fromCache: true);
 
-  Map<String, Object> toJson() => <String, Object>{'content': content};
+  Map<String, Object> toJson() => <String, Object>{'translation': translation};
+}
+
+@immutable
+final class TextExplanationExample {
+  const TextExplanationExample({
+    required this.source,
+    required this.translation,
+  });
+
+  factory TextExplanationExample.fromJson(Map<String, Object?> json) {
+    final source = json['source'];
+    final translation = json['translation'];
+    if (source is! String ||
+        source.trim().isEmpty ||
+        translation is! String ||
+        translation.trim().isEmpty) {
+      throw const FormatException('Invalid explanation example');
+    }
+    return TextExplanationExample(
+      source: source.trim(),
+      translation: translation.trim(),
+    );
+  }
+
+  final String source;
+  final String translation;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'source': source,
+    'translation': translation,
+  };
+}
+
+@immutable
+final class TextExplanation {
+  const TextExplanation({
+    required this.summary,
+    required this.meaningInContext,
+    required this.breakdown,
+    required this.literalTranslation,
+    required this.naturalTranslation,
+    required this.examples,
+    required this.commonMistake,
+    required this.fromCache,
+  });
+
+  factory TextExplanation.fromJson(Map<String, Object?> json) {
+    String requiredString(String key) {
+      final value = json[key];
+      if (value is! String || value.trim().isEmpty) {
+        throw const FormatException('Invalid text explanation response');
+      }
+      return value.trim();
+    }
+
+    String optionalString(String key) {
+      final value = json[key];
+      if (value is! String) {
+        throw const FormatException('Invalid text explanation response');
+      }
+      return value.trim();
+    }
+
+    final rawExamples = json['examples'];
+    if (rawExamples is! List<Object?> || rawExamples.length > 2) {
+      throw const FormatException('Invalid text explanation examples');
+    }
+    return TextExplanation(
+      summary: requiredString('summary'),
+      meaningInContext: requiredString('meaningInContext'),
+      breakdown: requiredString('breakdown'),
+      literalTranslation: optionalString('literalTranslation'),
+      naturalTranslation: requiredString('naturalTranslation'),
+      examples: List<TextExplanationExample>.unmodifiable(
+        rawExamples.map(
+          (Object? value) =>
+              TextExplanationExample.fromJson(value as Map<String, Object?>),
+        ),
+      ),
+      commonMistake: optionalString('commonMistake'),
+      fromCache: json['cached'] == true,
+    );
+  }
+
+  final String summary;
+  final String meaningInContext;
+  final String breakdown;
+  final String literalTranslation;
+  final String naturalTranslation;
+  final List<TextExplanationExample> examples;
+  final String commonMistake;
+  final bool fromCache;
+
+  TextExplanation asCached() => TextExplanation(
+    summary: summary,
+    meaningInContext: meaningInContext,
+    breakdown: breakdown,
+    literalTranslation: literalTranslation,
+    naturalTranslation: naturalTranslation,
+    examples: examples,
+    commonMistake: commonMistake,
+    fromCache: true,
+  );
+
+  Map<String, Object> toJson() => <String, Object>{
+    'summary': summary,
+    'meaningInContext': meaningInContext,
+    'breakdown': breakdown,
+    'literalTranslation': literalTranslation,
+    'naturalTranslation': naturalTranslation,
+    'examples': examples.map((example) => example.toJson()).toList(),
+    'commonMistake': commonMistake,
+  };
 }

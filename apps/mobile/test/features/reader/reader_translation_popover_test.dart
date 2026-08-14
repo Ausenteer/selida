@@ -205,7 +205,7 @@ void main() {
     await tester.tap(find.text('Translate'));
     await _pumpFrames(tester);
 
-    expect(find.text('Она пошла домой.'), findsOneWidget);
+    expect(find.text('пошла домой'), findsOneWidget);
     await tester.tap(find.text('Save phrase'));
     await _pumpFrames(tester);
     final phrases = await database.select(database.vocabularyItems).get();
@@ -337,7 +337,10 @@ void main() {
     );
     expect(tester.getRect(topChrome).bottom, lessThan(surfaceRect.top));
     expect(tester.getRect(bottomProgress).top, greaterThan(surfaceRect.bottom));
-    expect(find.text('0% · 1/1'), findsOneWidget);
+    expect(tester.getSize(topChrome).height, 44);
+    expect(tester.getSize(bottomProgress).height, 36);
+    expect(find.text('1 of 1 · 0%'), findsOneWidget);
+    expect(find.text('Aa'), findsOneWidget);
     expect(find.textContaining('min left'), findsNothing);
 
     await tester.pump(const Duration(seconds: 4));
@@ -378,6 +381,47 @@ void main() {
     await tester.pump();
     await brightnessGesture.up();
     expect(container.read(readerPreferencesProvider).brightness, lessThan(1));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+    await database.close();
+  });
+
+  testWidgets('progress scrubber jumps to the target chapter', (
+    WidgetTester tester,
+  ) async {
+    final database = AppDatabase(NativeDatabase.memory());
+    await _seedReader(database);
+    await _seedSecondChapter(database);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [databaseProvider.overrideWithValue(database)],
+        child: MaterialApp(
+          theme: SelidaTheme.light,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const ReaderScreen(bookId: 'book-1'),
+        ),
+      ),
+    );
+    await _pumpFrames(tester);
+
+    final slider = find.byType(Slider);
+    final sliderRect = tester.getRect(slider);
+    await tester.tapAt(Offset(sliderRect.right - 3, sliderRect.center.dy));
+    await _pumpFrames(tester);
+
+    expect(
+      tester
+          .widget<ReaderPageSurface>(find.byType(ReaderPageSurface))
+          .page
+          .segments
+          .single
+          .text,
+      'A second chapter.',
+    );
+    expect(find.byIcon(Icons.history_rounded), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -561,17 +605,29 @@ final class _FakeTextAssistant implements TextAssistant {
   const _FakeTextAssistant();
 
   @override
-  Future<TextAssistance> assistText(
+  Future<FragmentTranslation> translateFragment(
     TextAssistanceRequest request,
-    TextAssistanceKind kind,
   ) async {
-    return TextAssistance(
-      content: switch (kind) {
-        TextAssistanceKind.fragmentTranslation =>
-          request.source == 'walked' ? 'пошла' : 'Она пошла домой.',
-        TextAssistanceKind.explanation =>
-          'Past tense describes a completed action.',
+    return FragmentTranslation(
+      translation: switch (request.source) {
+        'walked' => 'пошла',
+        'walked home' => 'пошла домой',
+        _ => 'Она пошла домой.',
       },
+      fromCache: false,
+    );
+  }
+
+  @override
+  Future<TextExplanation> explainText(TextAssistanceRequest request) async {
+    return const TextExplanation(
+      summary: 'A completed action in the past.',
+      meaningInContext: 'Past tense describes a completed action.',
+      breakdown: 'The verb carries the past-tense form.',
+      literalTranslation: '',
+      naturalTranslation: 'пошла',
+      examples: <TextExplanationExample>[],
+      commonMistake: '',
       fromCache: false,
     );
   }

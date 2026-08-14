@@ -7,14 +7,17 @@ import {
   wordTranslationCacheKey,
 } from './cache/translation_cache.js';
 import {
+  type FragmentTranslationResponse,
+  type FragmentTranslationResult,
   type TextAssistanceRequest,
-  type TextAssistanceResponse,
-  type TextAssistanceResult,
+  type TextExplanationResponse,
+  type TextExplanationResult,
   type WordTranslationRequest,
   type WordTranslationResponse,
   type WordTranslationResult,
+  fragmentTranslationResponseSchema,
   textAssistanceBodySchema,
-  textAssistanceResponseSchema,
+  textExplanationResponseSchema,
   wordTranslationBodySchema,
   wordTranslationResponseSchema,
 } from './contracts/translation.js';
@@ -68,18 +71,20 @@ export function buildApp(dependencies: AppDependencies): FastifyInstance {
 
   app.post<{
     Body: TextAssistanceRequest;
-    Reply: TextAssistanceResponse;
+    Reply: FragmentTranslationResponse;
   }>(
     '/v1/translate/fragment',
     {
       schema: {
         body: textAssistanceBodySchema,
-        response: {200: textAssistanceResponseSchema},
+        response: {200: fragmentTranslationResponseSchema},
       },
     },
     async (request, reply) => {
       const key = textAssistanceCacheKey('fragment', request.body);
-      const cached = await dependencies.cache.get<TextAssistanceResult>(key);
+      const cached = await dependencies.cache.get<FragmentTranslationResult>(
+        key,
+      );
       if (cached != null) {
         return {...cached, cached: true};
       }
@@ -108,18 +113,18 @@ export function buildApp(dependencies: AppDependencies): FastifyInstance {
 
   app.post<{
     Body: TextAssistanceRequest;
-    Reply: TextAssistanceResponse;
+    Reply: TextExplanationResponse;
   }>(
     '/v1/explain',
     {
       schema: {
         body: textAssistanceBodySchema,
-        response: {200: textAssistanceResponseSchema},
+        response: {200: textExplanationResponseSchema},
       },
     },
     async (request, reply) => {
       const key = textAssistanceCacheKey('explanation', request.body);
-      const cached = await dependencies.cache.get<TextAssistanceResult>(key);
+      const cached = await dependencies.cache.get<TextExplanationResult>(key);
       if (cached != null) {
         return {...cached, cached: true};
       }

@@ -1,6 +1,7 @@
 import type {
+  FragmentTranslationResult,
   TextAssistanceRequest,
-  TextAssistanceResult,
+  TextExplanationResult,
   WordTranslationRequest,
   WordTranslationResult,
 } from '../contracts/translation.js';
@@ -9,8 +10,8 @@ export interface TranslationProvider {
   translateWord(request: WordTranslationRequest): Promise<WordTranslationResult>;
   translateFragment(
     request: TextAssistanceRequest,
-  ): Promise<TextAssistanceResult>;
-  explainText(request: TextAssistanceRequest): Promise<TextAssistanceResult>;
+  ): Promise<FragmentTranslationResult>;
+  explainText(request: TextAssistanceRequest): Promise<TextExplanationResult>;
 }
 
 export class TranslationProviderError extends Error {

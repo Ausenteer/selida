@@ -18,6 +18,9 @@
   "delete": "Удалить",
   "unknownAuthor": "Автор неизвестен",
   "readerSettings": "Настройки чтения",
+  "paragraphStyle": "Абзацы",
+  "bookParagraphStyle": "Книжные",
+  "modernParagraphStyle": "Современные",
   "fontSize": "Размер текста",
   "lineHeight": "Межстрочный интервал",
   "margins": "Поля",
@@ -31,6 +34,7 @@
   "sepiaTheme": "Сепия",
   "darkTheme": "Тёмная",
   "contents": "Оглавление",
+  "returnToPreviousLocation": "Вернуться к предыдущему месту",
   "mappingPrototype": "Позиция слова: {offset}",
   "@mappingPrototype": {
     "placeholders": {"offset": {"type": "int"}}
@@ -56,6 +60,13 @@
   "fragmentTranslationTitle": "Перевод",
   "explainText": "Объяснить",
   "explanationTitle": "Объяснение",
+  "explanationSummaryLabel": "Коротко",
+  "explanationMeaningLabel": "В этом контексте",
+  "explanationBreakdownLabel": "Как устроено",
+  "explanationLiteralLabel": "Дословно",
+  "explanationNaturalLabel": "Естественный перевод",
+  "explanationExamplesLabel": "Примеры",
+  "explanationCommonMistakeLabel": "Частая ошибка",
   "lemmaDetails": "{lemma} · {partOfSpeech}",
   "@lemmaDetails": {
     "placeholders": {
@@ -83,6 +94,22 @@
     "placeholders": {
       "page": {"type": "int"},
       "pageCount": {"type": "String"},
+      "chapter": {"type": "int"},
+      "chapterCount": {"type": "int"}
+    }
+  },
+  "readerCompactProgress": "{page} из {pageCount} · {percent}%",
+  "@readerCompactProgress": {
+    "placeholders": {
+      "page": {"type": "int"},
+      "pageCount": {"type": "String"},
+      "percent": {"type": "int"}
+    }
+  },
+  "readerProgressPreview": "{percent}% · глава {chapter} из {chapterCount}",
+  "@readerProgressPreview": {
+    "placeholders": {
+      "percent": {"type": "int"},
       "chapter": {"type": "int"},
       "chapterCount": {"type": "int"}
     }

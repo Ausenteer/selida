@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 
 enum ReaderBlockKind { paragraph, heading, quote }
 
+enum ReaderParagraphStyle { book, modern }
+
 @immutable
 final class ReaderBlock {
   const ReaderBlock({

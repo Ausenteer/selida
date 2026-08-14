@@ -73,7 +73,7 @@ final class VocabularyService {
 
   Future<String> savePhrase({
     required TextAssistanceRequest request,
-    required TextAssistance translation,
+    required FragmentTranslation translation,
     required String contextSentence,
     required int contextPhraseStart,
     required String sourceBookId,
@@ -96,7 +96,7 @@ final class VocabularyService {
       targetLanguage: request.targetLanguage,
       lemma: phrase,
       normalizedLemma: phrase.toLowerCase(),
-      translation: translation.content.trim(),
+      translation: translation.translation.trim(),
       kind: savesAsWord ? 'word' : 'phrase',
       partOfSpeech: savesAsWord ? null : 'phrase',
       surfaceForm: phrase,

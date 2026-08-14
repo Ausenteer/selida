@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/core/database/database_provider.dart';
+import 'package:selida/features/reader/domain/reader_page.dart';
 
 enum ReaderTheme { light, sepia, dark }
 
@@ -17,6 +18,7 @@ final class ReaderPreferences {
     this.brightness = 1,
     this.pageAnimationEnabled = true,
     this.theme = ReaderTheme.light,
+    this.paragraphStyle = ReaderParagraphStyle.book,
   });
 
   final double fontSize;
@@ -25,6 +27,7 @@ final class ReaderPreferences {
   final double brightness;
   final bool pageAnimationEnabled;
   final ReaderTheme theme;
+  final ReaderParagraphStyle paragraphStyle;
 
   ReaderPreferences copyWith({
     double? fontSize,
@@ -33,6 +36,7 @@ final class ReaderPreferences {
     double? brightness,
     bool? pageAnimationEnabled,
     ReaderTheme? theme,
+    ReaderParagraphStyle? paragraphStyle,
   }) {
     return ReaderPreferences(
       fontSize: fontSize ?? this.fontSize,
@@ -41,6 +45,7 @@ final class ReaderPreferences {
       brightness: brightness ?? this.brightness,
       pageAnimationEnabled: pageAnimationEnabled ?? this.pageAnimationEnabled,
       theme: theme ?? this.theme,
+      paragraphStyle: paragraphStyle ?? this.paragraphStyle,
     );
   }
 }
@@ -88,6 +93,10 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
     _set(state.copyWith(theme: value));
   }
 
+  void setParagraphStyle(ReaderParagraphStyle value) {
+    _set(state.copyWith(paragraphStyle: value));
+  }
+
   void _set(ReaderPreferences value) {
     _revision += 1;
     state = value;
@@ -105,15 +114,22 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
       final theme = ReaderTheme.values
           .where((ReaderTheme value) => value.name == themeName)
           .firstOrNull;
+      final paragraphStyleName = json['paragraphStyle'] as String?;
+      final paragraphStyle = ReaderParagraphStyle.values
+          .where(
+            (ReaderParagraphStyle value) => value.name == paragraphStyleName,
+          )
+          .firstOrNull;
       state = ReaderPreferences(
-        fontSize: _numberInRange(json['fontSize'], 15, 26, 18),
-        lineHeight: _numberInRange(json['lineHeight'], 1.3, 1.9, 1.55),
-        horizontalMargin: _numberInRange(json['horizontalMargin'], 16, 42, 24),
+        fontSize: _numberInRange(json['fontSize'], 15, 24, 18),
+        lineHeight: _numberInRange(json['lineHeight'], 1.3, 1.8, 1.55),
+        horizontalMargin: _numberInRange(json['horizontalMargin'], 16, 36, 24),
         brightness: _numberInRange(json['brightness'], 0.25, 1, 1),
         pageAnimationEnabled: json['pageAnimationEnabled'] is bool
             ? json['pageAnimationEnabled']! as bool
             : true,
         theme: theme ?? ReaderTheme.light,
+        paragraphStyle: paragraphStyle ?? ReaderParagraphStyle.book,
       );
     } on FormatException {
       return;
@@ -132,6 +148,7 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
         'brightness': value.brightness,
         'pageAnimationEnabled': value.pageAnimationEnabled,
         'theme': value.theme.name,
+        'paragraphStyle': value.paragraphStyle.name,
       }),
     );
   }

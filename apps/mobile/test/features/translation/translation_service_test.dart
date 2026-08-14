@@ -91,18 +91,15 @@ void main() {
         TextAssistanceKind.fragmentTranslation,
       ),
       requestKind: 'fragmentTranslation',
-      resultJson: jsonEncode(<String, Object>{'content': 'пошла домой'}),
+      resultJson: jsonEncode(<String, Object>{'translation': 'пошла домой'}),
     );
 
     final word = await service.translateWord(wordRequest);
-    final phrase = await service.assistText(
-      phraseRequest,
-      TextAssistanceKind.fragmentTranslation,
-    );
+    final phrase = await service.translateFragment(phraseRequest);
 
     expect(word.translation, 'пошла');
     expect(word.fromCache, isTrue);
-    expect(phrase.content, 'пошла домой');
+    expect(phrase.translation, 'пошла домой');
     expect(phrase.fromCache, isTrue);
   });
 }

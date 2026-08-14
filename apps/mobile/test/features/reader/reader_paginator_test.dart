@@ -78,5 +78,84 @@ void main() {
           : page.segments.last.top + page.segments.last.height;
       expect(usedHeight, lessThanOrEqualTo(spec.height + 0.01));
     }
+
+    final restoredPages = <ReaderPage>[
+      for (final page in pages)
+        ReaderPaginator.restorePage(
+          blocks: blocks,
+          spec: spec,
+          startOffset: page.startOffset,
+          endOffset: page.endOffset,
+        )!,
+    ];
+    expect(
+      restoredPages.map((ReaderPage page) => page.startOffset),
+      pages.map((ReaderPage page) => page.startOffset),
+    );
+    expect(
+      restoredPages.map((ReaderPage page) => page.endOffset),
+      pages.map((ReaderPage page) => page.endOffset),
+    );
+    expect(
+      restoredPages
+          .expand((ReaderPage page) => page.segments)
+          .map((ReaderPageSegment segment) => segment.text),
+      pages
+          .expand((ReaderPage page) => page.segments)
+          .map((ReaderPageSegment segment) => segment.text),
+    );
+  });
+
+  test('paragraph modes produce distinct readable rhythm', () {
+    const firstText = 'The first paragraph opens the scene.';
+    const secondText = 'The next paragraph continues the same scene.';
+    final blocks = <ReaderBlock>[
+      const ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: firstText,
+        startOffset: 0,
+        endOffset: firstText.length,
+      ),
+      const ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: secondText,
+        startOffset: firstText.length + 2,
+        endOffset: firstText.length + 2 + secondText.length,
+      ),
+    ];
+    const bookSpec = ReaderLayoutSpec(
+      width: 320,
+      height: 500,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+    );
+    const modernSpec = ReaderLayoutSpec(
+      width: 320,
+      height: 500,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+      paragraphStyle: ReaderParagraphStyle.modern,
+    );
+
+    final bookSegments = ReaderPaginator.paginate(
+      blocks: blocks,
+      spec: bookSpec,
+    ).single.segments;
+    final modernSegments = ReaderPaginator.paginate(
+      blocks: blocks,
+      spec: modernSpec,
+    ).single.segments;
+
+    expect(bookSegments.first.indentFirstLine, isFalse);
+    expect(bookSegments.last.indentFirstLine, isTrue);
+    expect(modernSegments.every((segment) => !segment.indentFirstLine), isTrue);
+    expect(
+      modernSegments.last.top - modernSegments.first.height,
+      greaterThan(bookSegments.last.top - bookSegments.first.height),
+    );
   });
 }

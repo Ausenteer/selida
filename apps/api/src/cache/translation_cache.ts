@@ -58,8 +58,8 @@ export function textAssistanceCacheKey(
         contextHash: createHash('sha256')
           .update(request.context.trim())
           .digest('hex'),
-        schemaVersion: 1,
-        promptVersion: 2,
+        schemaVersion: 2,
+        promptVersion: 3,
       }),
     )
     .digest('hex');

@@ -28,10 +28,9 @@ abstract interface class WordTranslator {
 }
 
 abstract interface class TextAssistant {
-  Future<TextAssistance> assistText(
-    TextAssistanceRequest request,
-    TextAssistanceKind kind,
-  );
+  Future<FragmentTranslation> translateFragment(TextAssistanceRequest request);
+
+  Future<TextExplanation> explainText(TextAssistanceRequest request);
 }
 
 final class TranslationService implements WordTranslator, TextAssistant {
@@ -102,17 +101,44 @@ final class TranslationService implements WordTranslator, TextAssistant {
   }
 
   @override
-  Future<TextAssistance> assistText(
-    TextAssistanceRequest request,
-    TextAssistanceKind kind,
-  ) async {
+  Future<FragmentTranslation> translateFragment(TextAssistanceRequest request) {
+    return _assistText<FragmentTranslation>(
+      request: request,
+      kind: TextAssistanceKind.fragmentTranslation,
+      path: '/v1/translate/fragment',
+      parse: FragmentTranslation.fromJson,
+      asCached: (FragmentTranslation value) => value.asCached(),
+      toJson: (FragmentTranslation value) => value.toJson(),
+    );
+  }
+
+  @override
+  Future<TextExplanation> explainText(TextAssistanceRequest request) {
+    return _assistText<TextExplanation>(
+      request: request,
+      kind: TextAssistanceKind.explanation,
+      path: '/v1/explain',
+      parse: TextExplanation.fromJson,
+      asCached: (TextExplanation value) => value.asCached(),
+      toJson: (TextExplanation value) => value.toJson(),
+    );
+  }
+
+  Future<T> _assistText<T>({
+    required TextAssistanceRequest request,
+    required TextAssistanceKind kind,
+    required String path,
+    required T Function(Map<String, Object?> json) parse,
+    required T Function(T value) asCached,
+    required Map<String, Object> Function(T value) toJson,
+  }) async {
     final cacheKey = textAssistanceCacheKey(request, kind);
     final cached = await _database.translationCacheEntry(cacheKey);
     if (cached != null) {
       try {
-        return TextAssistance.fromJson(
-          jsonDecode(cached.resultJson) as Map<String, Object?>,
-        ).asCached();
+        return asCached(
+          parse(jsonDecode(cached.resultJson) as Map<String, Object?>),
+        );
       } on FormatException {
         // Ignore stale cache data and refresh it from the server.
       } on TypeError {
@@ -120,10 +146,6 @@ final class TranslationService implements WordTranslator, TextAssistant {
       }
     }
 
-    final path = switch (kind) {
-      TextAssistanceKind.fragmentTranslation => '/v1/translate/fragment',
-      TextAssistanceKind.explanation => '/v1/explain',
-    };
     try {
       final httpRequest = await _httpClient
           .postUrl(Uri.parse('$_baseUrl$path'))
@@ -137,13 +159,11 @@ final class TranslationService implements WordTranslator, TextAssistant {
       if (response.statusCode != HttpStatus.ok) {
         throw const TranslationException(TranslationFailure.unavailable);
       }
-      final result = TextAssistance.fromJson(
-        jsonDecode(body) as Map<String, Object?>,
-      );
+      final result = parse(jsonDecode(body) as Map<String, Object?>);
       await _database.saveTranslationCacheEntry(
         key: cacheKey,
         requestKind: kind.name,
-        resultJson: jsonEncode(result.toJson()),
+        resultJson: jsonEncode(toJson(result)),
       );
       return result;
     } on SocketException {
@@ -151,6 +171,8 @@ final class TranslationService implements WordTranslator, TextAssistant {
     } on TimeoutException {
       throw const TranslationException(TranslationFailure.unavailable);
     } on FormatException {
+      throw const TranslationException(TranslationFailure.invalidResponse);
+    } on TypeError {
       throw const TranslationException(TranslationFailure.invalidResponse);
     } on HttpException {
       throw const TranslationException(TranslationFailure.unavailable);
@@ -198,8 +220,8 @@ String textAssistanceCacheKey(
             'contextHash': sha256
                 .convert(utf8.encode(request.context.trim()))
                 .toString(),
-            'schemaVersion': 1,
-            'promptVersion': 2,
+            'schemaVersion': 2,
+            'promptVersion': 3,
           }),
         ),
       )

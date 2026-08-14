@@ -10,6 +10,7 @@ final class ReaderLayoutSpec {
     required this.lineHeight,
     required this.locale,
     required this.textColor,
+    this.paragraphStyle = ReaderParagraphStyle.book,
   });
 
   final double width;
@@ -18,11 +19,19 @@ final class ReaderLayoutSpec {
   final double lineHeight;
   final Locale locale;
   final Color textColor;
+  final ReaderParagraphStyle paragraphStyle;
 }
 
 abstract final class ReaderPaginator {
-  static const double paragraphSpacing = 12;
+  static const int layoutAlgorithmVersion = 2;
   static const String paragraphIndent = '\u2003';
+
+  static double paragraphSpacingFor(ReaderParagraphStyle style) {
+    return switch (style) {
+      ReaderParagraphStyle.book => 4,
+      ReaderParagraphStyle.modern => 14,
+    };
+  }
 
   static List<ReaderPage> paginate({
     required List<ReaderBlock> blocks,
@@ -44,6 +53,78 @@ abstract final class ReaderPaginator {
     required ReaderLayoutSpec spec,
   }) {
     return ReaderPaginationCursor._(blocks: blocks, spec: spec);
+  }
+
+  static ReaderPage? restorePage({
+    required List<ReaderBlock> blocks,
+    required ReaderLayoutSpec spec,
+    required int startOffset,
+    required int endOffset,
+  }) {
+    if (startOffset < 0 || endOffset <= startOffset) {
+      return null;
+    }
+    final segments = <ReaderPageSegment>[];
+    var usedHeight = 0.0;
+    for (var blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+      final block = blocks[blockIndex];
+      if (block.endOffset <= startOffset) {
+        continue;
+      }
+      if (block.startOffset >= endOffset) {
+        break;
+      }
+      final segmentStart = math.max(startOffset, block.startOffset);
+      final segmentEnd = math.min(endOffset, block.endOffset);
+      if (segmentEnd <= segmentStart) {
+        continue;
+      }
+      final localStart = segmentStart - block.startOffset;
+      final localEnd = segmentEnd - block.startOffset;
+      if (localStart < 0 ||
+          localEnd > block.text.length ||
+          localEnd <= localStart) {
+        return null;
+      }
+      if (segments.isNotEmpty && localStart == 0) {
+        usedHeight += paragraphSpacingFor(spec.paragraphStyle);
+      }
+      final shouldIndent = _shouldIndent(
+        blocks: blocks,
+        blockIndex: blockIndex,
+        localOffset: localStart,
+        style: spec.paragraphStyle,
+      );
+      final prefix = shouldIndent ? paragraphIndent : '';
+      final text = block.text.substring(localStart, localEnd);
+      final painter = _createPainter(
+        text: '$prefix$text',
+        kind: block.kind,
+        spec: spec,
+      )..layout(maxWidth: spec.width);
+      final height = painter.height;
+      painter.dispose();
+      segments.add(
+        ReaderPageSegment(
+          kind: block.kind,
+          text: text,
+          globalStart: segmentStart,
+          globalEnd: segmentEnd,
+          indentFirstLine: shouldIndent,
+          top: usedHeight,
+          height: height,
+        ),
+      );
+      usedHeight += height;
+    }
+    if (segments.isEmpty ||
+        segments.first.globalStart != startOffset ||
+        segments.last.globalEnd != endOffset ||
+        usedHeight >
+            spec.height + (spec.fontSize * 1.16 * spec.lineHeight) + 0.5) {
+      return null;
+    }
+    return ReaderPage(segments: List<ReaderPageSegment>.unmodifiable(segments));
   }
 
   static TextPainter createPainter({
@@ -101,6 +182,19 @@ abstract final class ReaderPaginator {
     }
     return value.runes.first > 0xffff ? 2 : 1;
   }
+
+  static bool _shouldIndent({
+    required List<ReaderBlock> blocks,
+    required int blockIndex,
+    required int localOffset,
+    required ReaderParagraphStyle style,
+  }) {
+    return style == ReaderParagraphStyle.book &&
+        localOffset == 0 &&
+        blockIndex > 0 &&
+        blocks[blockIndex].kind == ReaderBlockKind.paragraph &&
+        blocks[blockIndex - 1].kind == ReaderBlockKind.paragraph;
+  }
 }
 
 final class ReaderPaginationCursor {
@@ -143,15 +237,20 @@ final class ReaderPaginationCursor {
       if (_localOffset == 0 && pageSegments.isNotEmpty) {
         final minimumLine = spec.fontSize * spec.lineHeight;
         if (spec.height - usedHeight <
-            ReaderPaginator.paragraphSpacing + minimumLine) {
+            ReaderPaginator.paragraphSpacingFor(spec.paragraphStyle) +
+                minimumLine) {
           return finishPage();
         }
-        usedHeight += ReaderPaginator.paragraphSpacing;
+        usedHeight += ReaderPaginator.paragraphSpacingFor(spec.paragraphStyle);
       }
 
       final remaining = block.text.substring(_localOffset);
-      final shouldIndent =
-          block.kind == ReaderBlockKind.paragraph && _localOffset == 0;
+      final shouldIndent = ReaderPaginator._shouldIndent(
+        blocks: blocks,
+        blockIndex: _blockIndex,
+        localOffset: _localOffset,
+        style: spec.paragraphStyle,
+      );
       final prefix = shouldIndent ? ReaderPaginator.paragraphIndent : '';
       final availableHeight = math.max(0, spec.height - usedHeight);
       final fullPainter = ReaderPaginator._createPainter(
