@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/features/translation/application/translation_service.dart';
 import 'package:selida/features/translation/domain/word_translation.dart';
+import 'package:selida_api_client/api.dart' as contract;
 
 void main() {
   group('isSingleVocabularyItem', () {
@@ -102,4 +104,103 @@ void main() {
     expect(phrase.translation, 'пошла домой');
     expect(phrase.fromCache, isTrue);
   });
+
+  test('generated client sends and decodes the OpenAPI contract', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final database = AppDatabase(NativeDatabase.memory());
+    final apiClient = contract.ApiClient(
+      basePath: 'http://${server.address.address}:${server.port}',
+    );
+    final service = TranslationService(database, apiClient: apiClient);
+    addTearDown(() async {
+      service.close();
+      await database.close();
+      await server.close(force: true);
+    });
+
+    final handledRequest = server.first.then((HttpRequest request) async {
+      expect(request.method, 'POST');
+      expect(request.uri.path, '/v1/translate/word');
+      final body =
+          jsonDecode(await utf8.decoder.bind(request).join())
+              as Map<String, Object?>;
+      expect(body, <String, Object?>{
+        'sourceLanguage': 'en',
+        'targetLanguage': 'ru',
+        'interfaceLanguage': 'ru',
+        'source': 'walked',
+        'context': 'She walked home.',
+      });
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode(<String, Object>{
+          'translation': 'пошла',
+          'lemma': 'walk',
+          'partOfSpeech': 'verb',
+          'formAnalysis': 'past tense',
+          'cached': false,
+        }),
+      );
+      await request.response.close();
+    });
+
+    final result = await service.translateWord(
+      const WordTranslationRequest(
+        sourceLanguage: 'en',
+        targetLanguage: 'ru',
+        interfaceLanguage: 'ru',
+        source: 'walked',
+        context: 'She walked home.',
+      ),
+    );
+    await handledRequest;
+
+    expect(result.translation, 'пошла');
+    expect(result.lemma, 'walk');
+    expect(result.fromCache, isFalse);
+  });
+
+  test(
+    'generated client reports malformed JSON as an invalid response',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final database = AppDatabase(NativeDatabase.memory());
+      final apiClient = contract.ApiClient(
+        basePath: 'http://${server.address.address}:${server.port}',
+      );
+      final service = TranslationService(database, apiClient: apiClient);
+      addTearDown(() async {
+        service.close();
+        await database.close();
+        await server.close(force: true);
+      });
+
+      final handledRequest = server.first.then((HttpRequest request) async {
+        await utf8.decoder.bind(request).join();
+        request.response.headers.contentType = ContentType.json;
+        request.response.write('{not-json');
+        await request.response.close();
+      });
+
+      await expectLater(
+        service.translateWord(
+          const WordTranslationRequest(
+            sourceLanguage: 'en',
+            targetLanguage: 'ru',
+            interfaceLanguage: 'ru',
+            source: 'walked',
+            context: 'She walked home.',
+          ),
+        ),
+        throwsA(
+          isA<TranslationException>().having(
+            (TranslationException error) => error.failure,
+            'failure',
+            TranslationFailure.invalidResponse,
+          ),
+        ),
+      );
+      await handledRequest;
+    },
+  );
 }

@@ -1,0 +1,11 @@
+{
+  "name": "@selida/api-contract",
+  "version": "0.1.0",
+  "description": "Canonical OpenAPI contract and generated clients for Selida",
+  "private": true,
+  "type": "module",
+  "files": [
+    "openapi.json",
+    "generated/types.d.ts"
+  ]
+}

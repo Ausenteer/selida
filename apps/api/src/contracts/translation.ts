@@ -1,158 +1,92 @@
-export interface WordTranslationRequest {
-  sourceLanguage: 'en' | 'el';
-  targetLanguage: 'ru';
-  interfaceLanguage: 'ru' | 'en';
-  source: string;
-  context: string;
+import type {FastifyInstance} from 'fastify';
+
+import openApiDocument from '../../../../packages/api-contract/openapi.json' with {
+  type: 'json',
+};
+import type {components} from '../../../../packages/api-contract/generated/types.js';
+
+type ContractSchemas = components['schemas'];
+
+export type HealthResponse = ContractSchemas['HealthResponse'];
+export type WordTranslationRequest =
+  ContractSchemas['WordTranslationRequest'];
+export type WordTranslationResponse =
+  ContractSchemas['WordTranslationResponse'];
+export type WordTranslationResult = Omit<WordTranslationResponse, 'cached'>;
+export type TextAssistanceRequest =
+  ContractSchemas['TextAssistanceRequest'];
+export type FragmentTranslationResponse =
+  ContractSchemas['FragmentTranslationResponse'];
+export type FragmentTranslationResult = Omit<
+  FragmentTranslationResponse,
+  'cached'
+>;
+export type TextExplanationExample =
+  ContractSchemas['TextExplanationExample'];
+export type TextExplanationResponse =
+  ContractSchemas['TextExplanationResponse'];
+export type TextExplanationResult = Omit<TextExplanationResponse, 'cached'>;
+
+type SchemaName = keyof ContractSchemas;
+type JsonSchema = Record<string, unknown>;
+
+const componentSchemas = openApiDocument.components.schemas;
+
+function schemaId(name: SchemaName): string {
+  return `https://selida.app/api/schemas/${name}`;
 }
 
-export interface WordTranslationResult {
-  translation: string;
-  lemma: string;
-  partOfSpeech: string;
-  formAnalysis: string;
+function normalizeReferences(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeReferences);
+  }
+  if (value == null || typeof value !== 'object') {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (
+        key === '$ref' &&
+        typeof entry === 'string' &&
+        entry.startsWith('#/components/schemas/')
+      ) {
+        return [
+          key,
+          `${schemaId(entry.slice('#/components/schemas/'.length) as SchemaName)}#`,
+        ];
+      }
+      return [key, normalizeReferences(entry)];
+    }),
+  );
 }
 
-export interface WordTranslationResponse extends WordTranslationResult {
-  cached: boolean;
+export function registerContractSchemas(app: FastifyInstance): void {
+  for (const [name, schema] of Object.entries(componentSchemas)) {
+    app.addSchema({
+      $id: schemaId(name as SchemaName),
+      ...(normalizeReferences(schema) as JsonSchema),
+    });
+  }
 }
 
-export interface TextAssistanceRequest {
-  sourceLanguage: 'en' | 'el';
-  targetLanguage: 'ru';
-  interfaceLanguage: 'ru' | 'en';
-  source: string;
-  context: string;
+function schemaReference(name: SchemaName): JsonSchema {
+  return {$ref: `${schemaId(name)}#`};
 }
 
-export interface FragmentTranslationResult {
-  translation: string;
-}
-
-export interface FragmentTranslationResponse
-  extends FragmentTranslationResult {
-  cached: boolean;
-}
-
-export interface TextExplanationExample {
-  source: string;
-  translation: string;
-}
-
-export interface TextExplanationResult {
-  summary: string;
-  meaningInContext: string;
-  breakdown: string;
-  literalTranslation: string;
-  naturalTranslation: string;
-  examples: TextExplanationExample[];
-  commonMistake: string;
-}
-
-export interface TextExplanationResponse extends TextExplanationResult {
-  cached: boolean;
-}
-
-export const wordTranslationBodySchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'sourceLanguage',
-    'targetLanguage',
-    'interfaceLanguage',
-    'source',
-    'context',
-  ],
-  properties: {
-    sourceLanguage: {type: 'string', enum: ['en', 'el']},
-    targetLanguage: {type: 'string', enum: ['ru']},
-    interfaceLanguage: {type: 'string', enum: ['ru', 'en']},
-    source: {type: 'string', minLength: 1, maxLength: 120},
-    context: {type: 'string', minLength: 1, maxLength: 2000},
-  },
-} as const;
-
-export const wordTranslationResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'translation',
-    'lemma',
-    'partOfSpeech',
-    'formAnalysis',
-    'cached',
-  ],
-  properties: {
-    translation: {type: 'string'},
-    lemma: {type: 'string'},
-    partOfSpeech: {type: 'string'},
-    formAnalysis: {type: 'string'},
-    cached: {type: 'boolean'},
-  },
-} as const;
-
-export const textAssistanceBodySchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'sourceLanguage',
-    'targetLanguage',
-    'interfaceLanguage',
-    'source',
-    'context',
-  ],
-  properties: {
-    sourceLanguage: {type: 'string', enum: ['en', 'el']},
-    targetLanguage: {type: 'string', enum: ['ru']},
-    interfaceLanguage: {type: 'string', enum: ['ru', 'en']},
-    source: {type: 'string', minLength: 1, maxLength: 1000},
-    context: {type: 'string', minLength: 1, maxLength: 2000},
-  },
-} as const;
-
-export const fragmentTranslationResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['translation', 'cached'],
-  properties: {
-    translation: {type: 'string'},
-    cached: {type: 'boolean'},
-  },
-} as const;
-
-export const textExplanationResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'summary',
-    'meaningInContext',
-    'breakdown',
-    'literalTranslation',
-    'naturalTranslation',
-    'examples',
-    'commonMistake',
-    'cached',
-  ],
-  properties: {
-    summary: {type: 'string'},
-    meaningInContext: {type: 'string'},
-    breakdown: {type: 'string'},
-    literalTranslation: {type: 'string'},
-    naturalTranslation: {type: 'string'},
-    examples: {
-      type: 'array',
-      maxItems: 2,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['source', 'translation'],
-        properties: {
-          source: {type: 'string'},
-          translation: {type: 'string'},
-        },
-      },
-    },
-    commonMistake: {type: 'string'},
-    cached: {type: 'boolean'},
-  },
-} as const;
+export const healthResponseSchema = schemaReference('HealthResponse');
+export const apiErrorResponseSchema = schemaReference('ApiError');
+export const wordTranslationBodySchema = schemaReference(
+  'WordTranslationRequest',
+);
+export const wordTranslationResponseSchema = schemaReference(
+  'WordTranslationResponse',
+);
+export const textAssistanceBodySchema = schemaReference(
+  'TextAssistanceRequest',
+);
+export const fragmentTranslationResponseSchema = schemaReference(
+  'FragmentTranslationResponse',
+);
+export const textExplanationResponseSchema = schemaReference(
+  'TextExplanationResponse',
+);

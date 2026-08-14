@@ -25,6 +25,8 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   receive_sharing_intent: ^1.9.0
+  selida_api_client:
+    path: ../../packages/api-contract/generated/dart
   uuid: ^4.6.0
   xml: ^7.0.1
 

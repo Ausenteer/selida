@@ -9,13 +9,17 @@ import {
 import {
   type FragmentTranslationResponse,
   type FragmentTranslationResult,
+  type HealthResponse,
   type TextAssistanceRequest,
   type TextExplanationResponse,
   type TextExplanationResult,
   type WordTranslationRequest,
   type WordTranslationResponse,
   type WordTranslationResult,
+  apiErrorResponseSchema,
   fragmentTranslationResponseSchema,
+  healthResponseSchema,
+  registerContractSchemas,
   textAssistanceBodySchema,
   textExplanationResponseSchema,
   wordTranslationBodySchema,
@@ -31,14 +35,25 @@ export interface AppDependencies {
 export function buildApp(dependencies: AppDependencies): FastifyInstance {
   const app = Fastify({logger: dependencies.logger ?? false});
 
-  app.get('/health', async () => ({status: 'ok'}));
+  registerContractSchemas(app);
+
+  app.get<{Reply: HealthResponse}>(
+    '/health',
+    {schema: {response: {200: healthResponseSchema}}},
+    async () => ({status: 'ok'}),
+  );
 
   app.post<{Body: WordTranslationRequest; Reply: WordTranslationResponse}>(
     '/v1/translate/word',
     {
       schema: {
         body: wordTranslationBodySchema,
-        response: {200: wordTranslationResponseSchema},
+        response: {
+          200: wordTranslationResponseSchema,
+          400: apiErrorResponseSchema,
+          502: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -77,7 +92,12 @@ export function buildApp(dependencies: AppDependencies): FastifyInstance {
     {
       schema: {
         body: textAssistanceBodySchema,
-        response: {200: fragmentTranslationResponseSchema},
+        response: {
+          200: fragmentTranslationResponseSchema,
+          400: apiErrorResponseSchema,
+          502: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -119,7 +139,12 @@ export function buildApp(dependencies: AppDependencies): FastifyInstance {
     {
       schema: {
         body: textAssistanceBodySchema,
-        response: {200: textExplanationResponseSchema},
+        response: {
+          200: textExplanationResponseSchema,
+          400: apiErrorResponseSchema,
+          502: apiErrorResponseSchema,
+          503: apiErrorResponseSchema,
+        },
       },
     },
     async (request, reply) => {

@@ -4,11 +4,20 @@
   "description": "Language learning through reading",
   "private": true,
   "workspaces": [
-    "apps/api"
+    "apps/api",
+    "packages/api-contract"
   ],
   "scripts": {
     "build": "npm run build --workspace=@selida/api",
-    "test": "npm run test --workspace=@selida/api"
+    "test": "npm run test --workspace=@selida/api",
+    "api:validate": "openapi-generator-cli validate -i packages/api-contract/openapi.json",
+    "api:generate:types": "openapi-typescript packages/api-contract/openapi.json -o packages/api-contract/generated/types.d.ts",
+    "api:generate:dart": "openapi-generator-cli generate -i packages/api-contract/openapi.json -g dart -o packages/api-contract/generated/dart -c packages/api-contract/dart-generator-config.json --global-property apiDocs=false,modelDocs=false,apiTests=false,modelTests=false",
+    "api:generate": "npm run api:generate:types && npm run api:generate:dart && dart format packages/api-contract/generated/dart/lib"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "2.40.1",
+    "openapi-typescript": "7.9.1"
   },
   "engines": {
     "node": ">=20"

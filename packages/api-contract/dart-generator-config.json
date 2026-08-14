@@ -1,0 +1,11 @@
+{
+  "pubName": "selida_api_client",
+  "pubVersion": "0.1.0",
+  "pubDescription": "Generated Dart client for the Selida API",
+  "pubHomepage": "https://github.com/Ausenteer/selida",
+  "pubPublishTo": "none",
+  "serializationLibrary": "native_serialization",
+  "useFinalProperties": true,
+  "disallowAdditionalPropertiesIfNotPresent": false,
+  "hideGenerationTimestamp": true
+}

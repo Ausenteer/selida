@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/core/database/database_provider.dart';
 import 'package:selida/features/translation/domain/word_translation.dart';
+import 'package:selida_api_client/api.dart' as contract;
 
 final Provider<WordTranslator> translationServiceProvider =
     Provider<WordTranslator>((Ref ref) {
@@ -34,17 +35,20 @@ abstract interface class TextAssistant {
 }
 
 final class TranslationService implements WordTranslator, TextAssistant {
-  TranslationService(this._database, {HttpClient? httpClient})
-    : _httpClient = httpClient ?? HttpClient();
+  TranslationService(this._database, {contract.ApiClient? apiClient})
+    : _apiClient = apiClient ?? contract.ApiClient(basePath: _baseUrl) {
+    _translationApi = contract.TranslationApi(_apiClient);
+  }
 
   final AppDatabase _database;
-  final HttpClient _httpClient;
+  final contract.ApiClient _apiClient;
+  late final contract.TranslationApi _translationApi;
 
   static const _configuredBaseUrl = String.fromEnvironment(
     'SELIDA_API_BASE_URL',
   );
 
-  String get _baseUrl {
+  static String get _baseUrl {
     final defaultBase = Platform.isAndroid
         ? 'http://10.0.2.2:8787'
         : 'http://127.0.0.1:8787';
@@ -68,20 +72,18 @@ final class TranslationService implements WordTranslator, TextAssistant {
     }
 
     try {
-      final httpRequest = await _httpClient
-          .postUrl(Uri.parse('$_baseUrl/v1/translate/word'))
-          .timeout(const Duration(seconds: 3));
-      httpRequest.headers.contentType = ContentType.json;
-      httpRequest.write(jsonEncode(request.toJson()));
-      final response = await httpRequest.close().timeout(
-        const Duration(seconds: 15),
-      );
-      final body = await utf8.decoder.bind(response).join();
-      if (response.statusCode != HttpStatus.ok) {
-        throw const TranslationException(TranslationFailure.unavailable);
+      final response = await _translationApi
+          .translateWord(_wordContractRequest(request))
+          .timeout(const Duration(seconds: 15));
+      if (response == null) {
+        throw const FormatException('Empty word translation response');
       }
-      final result = WordTranslation.fromJson(
-        jsonDecode(body) as Map<String, Object?>,
+      final result = WordTranslation(
+        translation: response.translation,
+        lemma: response.lemma,
+        partOfSpeech: response.partOfSpeech,
+        formAnalysis: response.formAnalysis,
+        fromCache: response.cached,
       );
       await _database.saveTranslationCacheEntry(
         key: cacheKey,
@@ -89,14 +91,14 @@ final class TranslationService implements WordTranslator, TextAssistant {
         resultJson: jsonEncode(result.toJson()),
       );
       return result;
-    } on SocketException {
-      throw const TranslationException(TranslationFailure.offline);
+    } on contract.ApiException catch (error) {
+      throw _translationExceptionFor(error);
     } on TimeoutException {
       throw const TranslationException(TranslationFailure.unavailable);
     } on FormatException {
       throw const TranslationException(TranslationFailure.invalidResponse);
-    } on HttpException {
-      throw const TranslationException(TranslationFailure.unavailable);
+    } on TypeError {
+      throw const TranslationException(TranslationFailure.invalidResponse);
     }
   }
 
@@ -105,10 +107,21 @@ final class TranslationService implements WordTranslator, TextAssistant {
     return _assistText<FragmentTranslation>(
       request: request,
       kind: TextAssistanceKind.fragmentTranslation,
-      path: '/v1/translate/fragment',
       parse: FragmentTranslation.fromJson,
       asCached: (FragmentTranslation value) => value.asCached(),
       toJson: (FragmentTranslation value) => value.toJson(),
+      requestRemote: () async {
+        final response = await _translationApi.translateFragment(
+          _textContractRequest(request),
+        );
+        if (response == null) {
+          throw const FormatException('Empty fragment translation response');
+        }
+        return FragmentTranslation(
+          translation: response.translation,
+          fromCache: response.cached,
+        );
+      },
     );
   }
 
@@ -117,20 +130,43 @@ final class TranslationService implements WordTranslator, TextAssistant {
     return _assistText<TextExplanation>(
       request: request,
       kind: TextAssistanceKind.explanation,
-      path: '/v1/explain',
       parse: TextExplanation.fromJson,
       asCached: (TextExplanation value) => value.asCached(),
       toJson: (TextExplanation value) => value.toJson(),
+      requestRemote: () async {
+        final response = await _translationApi.explainText(
+          _textContractRequest(request),
+        );
+        if (response == null) {
+          throw const FormatException('Empty text explanation response');
+        }
+        return TextExplanation(
+          summary: response.summary,
+          meaningInContext: response.meaningInContext,
+          breakdown: response.breakdown,
+          literalTranslation: response.literalTranslation,
+          naturalTranslation: response.naturalTranslation,
+          examples: <TextExplanationExample>[
+            for (final example in response.examples)
+              TextExplanationExample(
+                source: example.source_,
+                translation: example.translation,
+              ),
+          ],
+          commonMistake: response.commonMistake,
+          fromCache: response.cached,
+        );
+      },
     );
   }
 
   Future<T> _assistText<T>({
     required TextAssistanceRequest request,
     required TextAssistanceKind kind,
-    required String path,
     required T Function(Map<String, Object?> json) parse,
     required T Function(T value) asCached,
     required Map<String, Object> Function(T value) toJson,
+    required Future<T> Function() requestRemote,
   }) async {
     final cacheKey = textAssistanceCacheKey(request, kind);
     final cached = await _database.translationCacheEntry(cacheKey);
@@ -147,40 +183,69 @@ final class TranslationService implements WordTranslator, TextAssistant {
     }
 
     try {
-      final httpRequest = await _httpClient
-          .postUrl(Uri.parse('$_baseUrl$path'))
-          .timeout(const Duration(seconds: 3));
-      httpRequest.headers.contentType = ContentType.json;
-      httpRequest.write(jsonEncode(request.toJson()));
-      final response = await httpRequest.close().timeout(
-        const Duration(seconds: 20),
-      );
-      final body = await utf8.decoder.bind(response).join();
-      if (response.statusCode != HttpStatus.ok) {
-        throw const TranslationException(TranslationFailure.unavailable);
-      }
-      final result = parse(jsonDecode(body) as Map<String, Object?>);
+      final result = await requestRemote().timeout(const Duration(seconds: 20));
       await _database.saveTranslationCacheEntry(
         key: cacheKey,
         requestKind: kind.name,
         resultJson: jsonEncode(toJson(result)),
       );
       return result;
-    } on SocketException {
-      throw const TranslationException(TranslationFailure.offline);
+    } on contract.ApiException catch (error) {
+      throw _translationExceptionFor(error);
     } on TimeoutException {
       throw const TranslationException(TranslationFailure.unavailable);
     } on FormatException {
       throw const TranslationException(TranslationFailure.invalidResponse);
     } on TypeError {
       throw const TranslationException(TranslationFailure.invalidResponse);
-    } on HttpException {
-      throw const TranslationException(TranslationFailure.unavailable);
     }
   }
 
   void close() {
-    _httpClient.close(force: true);
+    _apiClient.client.close();
+  }
+
+  contract.WordTranslationRequest _wordContractRequest(
+    WordTranslationRequest request,
+  ) {
+    return contract.WordTranslationRequest(
+      sourceLanguage: request.sourceLanguage == 'el'
+          ? contract.WordTranslationRequestSourceLanguageEnum.el
+          : contract.WordTranslationRequestSourceLanguageEnum.en,
+      targetLanguage: contract.WordTranslationRequestTargetLanguageEnum.ru,
+      interfaceLanguage: request.interfaceLanguage == 'en'
+          ? contract.WordTranslationRequestInterfaceLanguageEnum.en
+          : contract.WordTranslationRequestInterfaceLanguageEnum.ru,
+      source_: request.source,
+      context: request.context,
+    );
+  }
+
+  contract.TextAssistanceRequest _textContractRequest(
+    TextAssistanceRequest request,
+  ) {
+    return contract.TextAssistanceRequest(
+      sourceLanguage: request.sourceLanguage == 'el'
+          ? contract.TextAssistanceRequestSourceLanguageEnum.el
+          : contract.TextAssistanceRequestSourceLanguageEnum.en,
+      targetLanguage: contract.TextAssistanceRequestTargetLanguageEnum.ru,
+      interfaceLanguage: request.interfaceLanguage == 'en'
+          ? contract.TextAssistanceRequestInterfaceLanguageEnum.en
+          : contract.TextAssistanceRequestInterfaceLanguageEnum.ru,
+      source_: request.source,
+      context: request.context,
+    );
+  }
+
+  TranslationException _translationExceptionFor(contract.ApiException error) {
+    if (error.message?.startsWith('Exception during deserialization') ??
+        false) {
+      return const TranslationException(TranslationFailure.invalidResponse);
+    }
+    if (error.innerException != null) {
+      return const TranslationException(TranslationFailure.offline);
+    }
+    return const TranslationException(TranslationFailure.unavailable);
   }
 }
 

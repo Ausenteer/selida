@@ -23,9 +23,15 @@ The reader pipeline is:
 
 ## Server boundaries
 
-The API is split into auth, sync, AI, entitlements, and public configuration
-modules. AI providers implement one typed adapter contract. AI secrets and model
-selection are server-only.
+The current API exposes public health and AI translation modules. Future auth,
+sync, entitlements, and public configuration modules remain separate planned
+boundaries. AI providers implement one typed adapter contract. AI secrets and
+model selection are server-only.
+
+`packages/api-contract/openapi.json` is the source of truth for request and
+response shapes. Fastify registers runtime schemas from it, server types are
+generated with `openapi-typescript`, and Flutter calls the generated Dart client
+package instead of assembling HTTP requests by hand.
 
 The translation cache key includes the request kind, language direction,
 normalized source, context hash where required, schema version, and prompt

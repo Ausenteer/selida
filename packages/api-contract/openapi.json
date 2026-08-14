@@ -1,0 +1,398 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Selida API",
+    "description": "Translation and language-learning API used by the Selida mobile application.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8787",
+      "description": "Local iOS and desktop development server"
+    },
+    {
+      "url": "http://10.0.2.2:8787",
+      "description": "Local Android emulator development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Public",
+      "description": "Unauthenticated service endpoints"
+    },
+    {
+      "name": "Translation",
+      "description": "Contextual translation and explanation endpoints"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "tags": ["Public"],
+        "summary": "Check API availability",
+        "responses": {
+          "200": {
+            "description": "The service is available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/translate/word": {
+      "post": {
+        "operationId": "translateWord",
+        "tags": ["Translation"],
+        "summary": "Translate and analyze one word in context",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WordTranslationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contextual word translation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WordTranslationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        }
+      }
+    },
+    "/v1/translate/fragment": {
+      "post": {
+        "operationId": "translateFragment",
+        "tags": ["Translation"],
+        "summary": "Translate only the selected text fragment",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextAssistanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Translation of the selected fragment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FragmentTranslationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        }
+      }
+    },
+    "/v1/explain": {
+      "post": {
+        "operationId": "explainText",
+        "tags": ["Translation"],
+        "summary": "Explain the selected text for a language learner",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextAssistanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured explanation of the selected text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextExplanationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "502": {
+            "$ref": "#/components/responses/ProviderError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "ValidationError": {
+        "description": "The request body does not match the API contract",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "ProviderError": {
+        "description": "The configured translation provider is unavailable",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        }
+      },
+      "WordTranslationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceLanguage",
+          "targetLanguage",
+          "interfaceLanguage",
+          "source",
+          "context"
+        ],
+        "properties": {
+          "sourceLanguage": {
+            "type": "string",
+            "enum": ["en", "el"]
+          },
+          "targetLanguage": {
+            "type": "string",
+            "enum": ["ru"]
+          },
+          "interfaceLanguage": {
+            "type": "string",
+            "enum": ["ru", "en"]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "WordTranslationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "translation",
+          "lemma",
+          "partOfSpeech",
+          "formAnalysis",
+          "cached"
+        ],
+        "properties": {
+          "translation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lemma": {
+            "type": "string",
+            "minLength": 1
+          },
+          "partOfSpeech": {
+            "type": "string",
+            "minLength": 1
+          },
+          "formAnalysis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cached": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TextAssistanceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceLanguage",
+          "targetLanguage",
+          "interfaceLanguage",
+          "source",
+          "context"
+        ],
+        "properties": {
+          "sourceLanguage": {
+            "type": "string",
+            "enum": ["en", "el"]
+          },
+          "targetLanguage": {
+            "type": "string",
+            "enum": ["ru"]
+          },
+          "interfaceLanguage": {
+            "type": "string",
+            "enum": ["ru", "en"]
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "FragmentTranslationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["translation", "cached"],
+        "properties": {
+          "translation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cached": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TextExplanationExample": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "translation"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "translation": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "TextExplanationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "summary",
+          "meaningInContext",
+          "breakdown",
+          "literalTranslation",
+          "naturalTranslation",
+          "examples",
+          "commonMistake",
+          "cached"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meaningInContext": {
+            "type": "string",
+            "minLength": 1
+          },
+          "breakdown": {
+            "type": "string",
+            "minLength": 1
+          },
+          "literalTranslation": {
+            "type": "string"
+          },
+          "naturalTranslation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "examples": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/components/schemas/TextExplanationExample"
+            }
+          },
+          "commonMistake": {
+            "type": "string"
+          },
+          "cached": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["message"],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

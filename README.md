@@ -9,7 +9,8 @@ MVP системы изучения языка через чтение собс�
 
 - `apps/mobile` — Flutter iOS/Android, Riverpod, go_router и Drift.
 - `apps/api` — строгий TypeScript workspace с Fastify API и AI-адаптерами.
-- `packages/api-contract` — будущий OpenAPI-контракт и conformance fixtures.
+- `packages/api-contract` — канонический OpenAPI 3.1-контракт,
+  сгенерированные TypeScript-типы и Dart-клиент.
 - `infra` — будущие PostgreSQL-миграции и локальная инфраструктура.
 - `docs` — архитектурные решения и отчёты по вехам.
 
@@ -52,8 +53,18 @@ flutter build apk --debug
 
 cd ../..
 npm install
+npm run api:validate
 npm run build
 ```
+
+При изменении API сначала обновите `packages/api-contract/openapi.json`, затем
+перегенерируйте оба клиента одной командой:
+
+```sh
+npm run api:generate
+```
+
+Для генерации нужен Java 11+; Android toolchain проекта использует JDK 17.
 
 Отчёты о состоянии и известных ограничениях:
 
