@@ -21,6 +21,13 @@ The reader pipeline is:
 4. Lay out the current page exactly with TextPainter on the UI isolate.
 5. Prefetch adjacent pages and persist their UTF-16 ranges by layout fingerprint.
 
+`ReaderScreen` coordinates the active reading session, while incremental
+pagination and cache restoration live in `ReaderPaginationController` and
+book-wide progress math lives in `ReaderBookNavigation`. Cross-page selection
+and boundary-swipe tracking are isolated in reader interaction controllers.
+Reader chrome, contents, settings, translation popovers, and assistance sheets
+are separate presentation components in the same library.
+
 ## Server boundaries
 
 The current API exposes public health and AI translation modules. Future auth,

@@ -49,3 +49,19 @@ final class ReaderPage {
   int get startOffset => segments.isEmpty ? 0 : segments.first.globalStart;
   int get endOffset => segments.isEmpty ? 0 : segments.last.globalEnd;
 }
+
+@immutable
+final class ReaderTextRange {
+  const ReaderTextRange({required this.startOffset, required this.endOffset});
+
+  final int startOffset;
+  final int endOffset;
+}
+
+@immutable
+final class ReaderTextSelection extends ReaderTextRange {
+  const ReaderTextSelection({
+    required super.startOffset,
+    required super.endOffset,
+  });
+}
