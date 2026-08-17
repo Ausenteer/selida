@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -47,13 +46,11 @@ final class TranslationService implements WordTranslator, TextAssistant {
   static const _configuredBaseUrl = String.fromEnvironment(
     'SELIDA_API_BASE_URL',
   );
+  static const _productionBaseUrl =
+      'https://selidaapi-production.up.railway.app';
 
-  static String get _baseUrl {
-    final defaultBase = Platform.isAndroid
-        ? 'http://10.0.2.2:8787'
-        : 'http://127.0.0.1:8787';
-    return _configuredBaseUrl.isEmpty ? defaultBase : _configuredBaseUrl;
-  }
+  static String get _baseUrl =>
+      _configuredBaseUrl.isEmpty ? _productionBaseUrl : _configuredBaseUrl;
 
   @override
   Future<WordTranslation> translateWord(WordTranslationRequest request) async {

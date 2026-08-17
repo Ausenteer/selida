@@ -31,6 +31,15 @@ Developer account следует зарегистрировать App Group `gro
 Runner и Share Extension. Bundle ID `com.selida.app` пока считается рабочим и
 может быть заменён до настройки signing.
 
+Мобильный клиент по умолчанию использует production API
+`https://selidaapi-production.up.railway.app`, поэтому запуск из Xcode не требует
+дополнительных параметров. Для подключения к другому API передайте адрес при
+сборке:
+
+```sh
+flutter run --dart-define=SELIDA_API_BASE_URL=http://127.0.0.1:8787
+```
+
 ## Запуск API
 
 ```sh
