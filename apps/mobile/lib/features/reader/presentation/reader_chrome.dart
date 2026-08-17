@@ -42,8 +42,9 @@ final class _ReaderChrome extends StatelessWidget {
     final safePadding = MediaQuery.paddingOf(context);
     final strings = AppLocalizations.of(context);
     final chapterName = chapterTitle?.trim().isNotEmpty ?? false
-        ? chapterTitle!
-        : '${strings.chapter} $chapterNumber';
+        ? chapterTitle!.trim()
+        : title;
+    final chapterLabel = '$chapterName · $chapterNumber/$chapterCount';
     return SizedBox.expand(
       child: Stack(
         children: <Widget>[
@@ -97,40 +98,26 @@ final class _ReaderChrome extends StatelessWidget {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: onContents,
-                          child: Column(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: <Widget>[
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.text,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12.5,
+                              Flexible(
+                                child: Text(
+                                  chapterLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: palette.text,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12.5,
+                                  ),
                                 ),
                               ),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: <Widget>[
-                                  Flexible(
-                                    child: Text(
-                                      '$chapterName · $chapterNumber/$chapterCount',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: palette.mutedText,
-                                        fontSize: 9.5,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    color: palette.mutedText,
-                                    size: 13,
-                                  ),
-                                ],
+                              const SizedBox(width: 3),
+                              Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: palette.mutedText,
+                                size: 15,
                               ),
                             ],
                           ),

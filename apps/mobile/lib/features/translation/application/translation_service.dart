@@ -141,9 +141,17 @@ final class TranslationService implements WordTranslator, TextAssistant {
           throw const FormatException('Empty text explanation response');
         }
         return TextExplanation(
-          summary: response.summary,
-          meaningInContext: response.meaningInContext,
-          breakdown: response.breakdown,
+          focus: switch (response.focusType) {
+            contract.TextExplanationResponseFocusTypeEnum.phrasalVerb =>
+              TextExplanationFocus.phrasalVerb,
+            contract.TextExplanationResponseFocusTypeEnum.idiom =>
+              TextExplanationFocus.idiom,
+            _ => TextExplanationFocus.grammar,
+          },
+          focusText: response.focusText,
+          title: response.title,
+          explanation: response.explanation,
+          structure: response.structure,
           literalTranslation: response.literalTranslation,
           naturalTranslation: response.naturalTranslation,
           examples: <TextExplanationExample>[
@@ -285,8 +293,8 @@ String textAssistanceCacheKey(
             'contextHash': sha256
                 .convert(utf8.encode(request.context.trim()))
                 .toString(),
-            'schemaVersion': 2,
-            'promptVersion': 3,
+            'schemaVersion': kind == TextAssistanceKind.explanation ? 5 : 2,
+            'promptVersion': kind == TextAssistanceKind.explanation ? 7 : 3,
           }),
         ),
       )

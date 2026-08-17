@@ -121,9 +121,12 @@ test('explanation prompt stays scoped to selected text and returns sections', as
               parts: [
                 {
                   text: JSON.stringify({
-                    summary: 'Состояние, близкое к смерти.',
-                    meaningInContext: 'Описывает сны после опасного опыта.',
-                    breakdown: 'near + death образуют составное определение.',
+                    focusType: 'grammar',
+                    focusText: 'near-death',
+                    title: 'Составное определение',
+                    explanation:
+                      'near и death образуют единое определение перед существительным.',
+                    structure: 'near-death + noun',
                     literalTranslation: 'близкий к смерти',
                     naturalTranslation: 'предсмертный',
                     examples: [
@@ -161,6 +164,11 @@ test('explanation prompt stays scoped to selected text and returns sections', as
   const instruction = requestBody?.systemInstruction?.parts?.[0]?.text ?? '';
   assert.match(instruction, /Explain ONLY selectedText/);
   assert.match(instruction, /do not explain or translate the whole/);
+  assert.match(instruction, /Do not retell or paraphrase/);
+  assert.match(instruction, /never merely repeat focusText/);
   assert.equal(result.naturalTranslation, 'предсмертный');
+  assert.equal(result.focusType, 'grammar');
+  assert.equal(result.focusText, 'near-death');
+  assert.equal(result.title, 'Составное определение');
   assert.equal(result.examples.length, 1);
 });

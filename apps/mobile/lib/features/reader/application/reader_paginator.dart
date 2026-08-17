@@ -1,6 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:hyphenatorx/hyphenatorx.dart';
+import 'package:hyphenatorx/languages/language_el_monoton.dart';
+import 'package:hyphenatorx/languages/language_en_us.dart';
 import 'package:selida/features/reader/domain/reader_page.dart';
 
 final class ReaderLayoutSpec {
@@ -29,9 +33,231 @@ final class ReaderLayoutSpec {
   final ReaderFontFamily fontFamily;
 }
 
+final class ReaderTextPainter {
+  ReaderTextPainter._({
+    required this._delegate,
+    required this._hyphenColor,
+    required this._hyphenLength,
+    required this._sourceText,
+    required this._displayText,
+  }) : _plainSourceText = _sourceText.toPlainText();
+
+  final TextPainter _delegate;
+  final Color _hyphenColor;
+  final double _hyphenLength;
+  final InlineSpan _sourceText;
+  final _DisplayText _displayText;
+  final String _plainSourceText;
+  static final RegExp _wordCharacter = RegExp(
+    r"[\p{L}\p{M}\p{N}'’\-]",
+    unicode: true,
+  );
+
+  InlineSpan? get text => _sourceText;
+  TextAlign get textAlign => _delegate.textAlign;
+  double get height => _delegate.height;
+
+  @visibleForTesting
+  String get debugDisplayText => _displayText.value;
+
+  @visibleForTesting
+  List<(Rect, Rect)> get debugBrokenHyphenBoxes =>
+      _brokenHyphenBoxes().toList(growable: false);
+
+  void layout({double minWidth = 0, double maxWidth = double.infinity}) {
+    final reserve = _displayText.softHyphenOffsets.isEmpty
+        ? 0.0
+        : _hyphenLength + 1;
+    _delegate.layout(
+      minWidth: math.max(0, minWidth - reserve),
+      maxWidth: maxWidth.isFinite ? math.max(0, maxWidth - reserve) : maxWidth,
+    );
+  }
+
+  List<LineMetrics> computeLineMetrics() => _delegate.computeLineMetrics();
+
+  TextPosition getPositionForOffset(Offset offset) {
+    final position = _delegate.getPositionForOffset(offset);
+    return TextPosition(
+      offset: _displayText.sourceOffsetFor(position.offset),
+      affinity: position.affinity,
+    );
+  }
+
+  TextRange getLineBoundary(TextPosition position) {
+    return _sourceRangeFor(
+      _delegate.getLineBoundary(
+        TextPosition(
+          offset: _displayText.displayOffsetFor(position.offset),
+          affinity: position.affinity,
+        ),
+      ),
+    );
+  }
+
+  TextRange getWordBoundary(TextPosition position) {
+    var start = position.offset.clamp(0, _plainSourceText.length);
+    var end = start;
+    while (start > 0 && _isWordCharacterAt(start - 1)) {
+      start -= 1;
+    }
+    while (end < _plainSourceText.length && _isWordCharacterAt(end)) {
+      end += 1;
+    }
+    return TextRange(start: start, end: end);
+  }
+
+  List<TextBox> getBoxesForSelection(TextSelection selection) {
+    return _delegate.getBoxesForSelection(
+      TextSelection(
+        baseOffset: _displayText.displayOffsetFor(selection.baseOffset),
+        extentOffset: _displayText.displayOffsetFor(selection.extentOffset),
+        affinity: selection.affinity,
+        isDirectional: selection.isDirectional,
+      ),
+    );
+  }
+
+  void paint(Canvas canvas, Offset offset) {
+    _delegate.paint(canvas, offset);
+    for (final (beforeRect, _) in _brokenHyphenBoxes()) {
+      final left = beforeRect.right + 0.5;
+      final y = beforeRect.top + beforeRect.height * 0.54;
+      canvas.drawLine(
+        offset + Offset(left, y),
+        offset + Offset(left + _hyphenLength, y),
+        Paint()
+          ..color = _hyphenColor
+          ..strokeWidth = 1.15
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  Iterable<(Rect, Rect)> _brokenHyphenBoxes() sync* {
+    for (final softHyphenOffset in _displayText.softHyphenOffsets) {
+      if (softHyphenOffset == 0 ||
+          softHyphenOffset + 1 >= _displayText.value.length) {
+        continue;
+      }
+      final before = _delegate.getBoxesForSelection(
+        TextSelection(
+          baseOffset: softHyphenOffset - 1,
+          extentOffset: softHyphenOffset,
+        ),
+      );
+      final after = _delegate.getBoxesForSelection(
+        TextSelection(
+          baseOffset: softHyphenOffset + 1,
+          extentOffset: softHyphenOffset + 2,
+        ),
+      );
+      if (before.isEmpty || after.isEmpty) {
+        continue;
+      }
+      final beforeRect = before.last.toRect();
+      final afterRect = after.first.toRect();
+      if (afterRect.top <= beforeRect.top + 1) {
+        continue;
+      }
+      yield (beforeRect, afterRect);
+    }
+  }
+
+  void dispose() {
+    _delegate.dispose();
+  }
+
+  bool _isWordCharacterAt(int offset) =>
+      _wordCharacter.hasMatch(_plainSourceText.substring(offset, offset + 1));
+
+  TextRange _sourceRangeFor(TextRange range) => TextRange(
+    start: _displayText.sourceOffsetFor(range.start),
+    end: _displayText.sourceOffsetFor(range.end),
+  );
+}
+
+final class _DisplayText {
+  const _DisplayText({
+    required this.value,
+    required this.sourceToDisplay,
+    required this.displayToSource,
+  });
+
+  factory _DisplayText.identity(String value) {
+    final offsets = List<int>.generate(value.length + 1, (int index) => index);
+    return _DisplayText(
+      value: value,
+      sourceToDisplay: offsets,
+      displayToSource: offsets,
+    );
+  }
+
+  factory _DisplayText.fromHyphenated(String source, String display) {
+    if (display == source || source.contains(_softHyphen)) {
+      return _DisplayText.identity(source);
+    }
+    final sourceToDisplay = List<int>.filled(source.length + 1, 0);
+    final displayToSource = List<int>.filled(display.length + 1, 0);
+    var sourceOffset = 0;
+    for (
+      var displayOffset = 0;
+      displayOffset < display.length;
+      displayOffset++
+    ) {
+      final unit = display.codeUnitAt(displayOffset);
+      if (unit == _softHyphenCodeUnit) {
+        displayToSource[displayOffset + 1] = sourceOffset;
+        continue;
+      }
+      if (sourceOffset >= source.length ||
+          unit != source.codeUnitAt(sourceOffset)) {
+        return _DisplayText.identity(source);
+      }
+      sourceToDisplay[sourceOffset] = displayOffset;
+      sourceOffset += 1;
+      displayToSource[displayOffset + 1] = sourceOffset;
+    }
+    if (sourceOffset != source.length) {
+      return _DisplayText.identity(source);
+    }
+    sourceToDisplay[source.length] = display.length;
+    return _DisplayText(
+      value: display,
+      sourceToDisplay: sourceToDisplay,
+      displayToSource: displayToSource,
+    );
+  }
+
+  static const String _softHyphen = '\u00ad';
+  static const int _softHyphenCodeUnit = 0x00ad;
+
+  final String value;
+  final List<int> sourceToDisplay;
+  final List<int> displayToSource;
+
+  Iterable<int> get softHyphenOffsets sync* {
+    for (var offset = 0; offset < value.length; offset++) {
+      if (value.codeUnitAt(offset) == _softHyphenCodeUnit) {
+        yield offset;
+      }
+    }
+  }
+
+  int displayOffsetFor(int sourceOffset) =>
+      sourceToDisplay[sourceOffset.clamp(0, sourceToDisplay.length - 1)];
+
+  int sourceOffsetFor(int displayOffset) =>
+      displayToSource[displayOffset.clamp(0, displayToSource.length - 1)];
+}
+
 abstract final class ReaderPaginator {
-  static const int layoutAlgorithmVersion = 4;
-  static const String paragraphIndent = '\u2003';
+  static const int layoutAlgorithmVersion = 8;
+  static const String paragraphIndent = '\u2002';
+  static final Hyphenator _englishHyphenator = Hyphenator(Language_en_us());
+  static final Hyphenator _greekHyphenator = Hyphenator(Language_el_monoton());
+  static final Map<String, _DisplayText> _hyphenationCache =
+      <String, _DisplayText>{};
 
   static double paragraphSpacingFor(ReaderParagraphStyle style) {
     return switch (style) {
@@ -105,7 +331,11 @@ abstract final class ReaderPaginator {
         return null;
       }
       if (segments.isNotEmpty && localStart == 0) {
-        usedHeight += _spacingBefore(block.kind, spec.paragraphStyle);
+        usedHeight += _spacingBefore(
+          block.kind,
+          spec.paragraphStyle,
+          previousKind: blockIndex > 0 ? blocks[blockIndex - 1].kind : null,
+        );
       }
       final shouldIndent = _shouldIndent(
         blocks: blocks,
@@ -159,7 +389,7 @@ abstract final class ReaderPaginator {
     return ReaderPage(segments: List<ReaderPageSegment>.unmodifiable(segments));
   }
 
-  static TextPainter createPainter({
+  static ReaderTextPainter createPainter({
     required String text,
     required ReaderBlockKind kind,
     required ReaderLayoutSpec spec,
@@ -170,6 +400,9 @@ abstract final class ReaderPaginator {
     final isHeading = kind == ReaderBlockKind.heading;
     final isQuote = kind == ReaderBlockKind.quote;
     final isSeparator = kind == ReaderBlockKind.separator;
+    final textHeight = isHeading
+        ? math.min(spec.lineHeight, 1.3)
+        : spec.lineHeight;
     final baseStyle = TextStyle(
       color: spec.textColor,
       fontFamily: fontFamilyFor(spec.fontFamily),
@@ -180,8 +413,9 @@ abstract final class ReaderPaginator {
           : spec.fontSize,
       fontWeight: isHeading ? FontWeight.w600 : FontWeight.w400,
       fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
-      height: spec.lineHeight,
-      letterSpacing: 0.05,
+      height: textHeight,
+      letterSpacing: isHeading ? -0.18 : 0,
+      leadingDistribution: TextLeadingDistribution.even,
     );
     final children = <InlineSpan>[
       if (prefix.isNotEmpty) TextSpan(text: prefix),
@@ -195,8 +429,37 @@ abstract final class ReaderPaginator {
         kind == ReaderBlockKind.paragraph ||
         kind == ReaderBlockKind.quote ||
         kind == ReaderBlockKind.listItem;
-    return TextPainter(
-      text: TextSpan(style: baseStyle, children: children),
+    final sourceRoot = TextSpan(style: baseStyle, children: children);
+    final displayBody =
+        spec.textAlignment == ReaderTextAlignment.justified && canJustify
+        ? _hyphenatedText(text, spec.locale)
+        : _DisplayText.identity(text);
+    final displayText = _withPrefix(prefix, displayBody);
+    final displaySpans = <ReaderInlineSpan>[
+      for (final span in inlineSpans)
+        ReaderInlineSpan(
+          startOffset: displayBody.displayOffsetFor(span.startOffset),
+          endOffset: displayBody.displayOffsetFor(span.endOffset),
+          bold: span.bold,
+          italic: span.italic,
+          underline: span.underline,
+          href: span.href,
+          isFootnote: span.isFootnote,
+        ),
+    ];
+    final displayRoot = TextSpan(
+      style: baseStyle,
+      children: <InlineSpan>[
+        if (prefix.isNotEmpty) TextSpan(text: prefix),
+        ..._styledTextSpans(
+          text: displayBody.value,
+          inlineSpans: displaySpans,
+          linkColor: spec.linkColor ?? spec.textColor,
+        ),
+      ],
+    );
+    final delegate = TextPainter(
+      text: displayRoot,
       textDirection: TextDirection.ltr,
       textAlign: isSeparator
           ? TextAlign.center
@@ -209,9 +472,56 @@ abstract final class ReaderPaginator {
       strutStyle: StrutStyle(
         fontFamily: fontFamilyFor(spec.fontFamily),
         fontSize: isHeading ? spec.fontSize * 1.16 : spec.fontSize,
-        height: spec.lineHeight,
+        height: textHeight,
         forceStrutHeight: false,
       ),
+    );
+    return ReaderTextPainter._(
+      delegate: delegate,
+      hyphenColor: spec.textColor,
+      hyphenLength: spec.fontSize * 0.27,
+      sourceText: sourceRoot,
+      displayText: displayText,
+    );
+  }
+
+  static _DisplayText _hyphenatedText(String text, Locale locale) {
+    final language = locale.languageCode == 'el' ? 'el' : 'en';
+    final key = '$language:$text';
+    final cached = _hyphenationCache[key];
+    if (cached != null) {
+      return cached;
+    }
+    final hyphenator = language == 'el' ? _greekHyphenator : _englishHyphenator;
+    final result = _DisplayText.fromHyphenated(
+      text,
+      hyphenator.hyphenateText(text),
+    );
+    if (_hyphenationCache.length >= 1024) {
+      _hyphenationCache.clear();
+    }
+    _hyphenationCache[key] = result;
+    return result;
+  }
+
+  static _DisplayText _withPrefix(String prefix, _DisplayText body) {
+    if (prefix.isEmpty) {
+      return body;
+    }
+    final sourceToDisplay = <int>[
+      for (var index = 0; index <= prefix.length; index++) index,
+      for (var index = 1; index < body.sourceToDisplay.length; index++)
+        prefix.length + body.sourceToDisplay[index],
+    ];
+    final displayToSource = <int>[
+      for (var index = 0; index <= prefix.length; index++) index,
+      for (var index = 1; index < body.displayToSource.length; index++)
+        prefix.length + body.displayToSource[index],
+    ];
+    return _DisplayText(
+      value: '$prefix${body.value}',
+      sourceToDisplay: sourceToDisplay,
+      displayToSource: displayToSource,
     );
   }
 
@@ -276,8 +586,12 @@ abstract final class ReaderPaginator {
 
   static double _spacingBefore(
     ReaderBlockKind kind,
-    ReaderParagraphStyle style,
-  ) {
+    ReaderParagraphStyle style, {
+    ReaderBlockKind? previousKind,
+  }) {
+    if (previousKind == ReaderBlockKind.heading) {
+      return 12;
+    }
     return switch (kind) {
       ReaderBlockKind.heading => 18,
       ReaderBlockKind.separator => 14,
@@ -341,6 +655,7 @@ final class ReaderPaginationCursor {
         final spacing = ReaderPaginator._spacingBefore(
           block.kind,
           spec.paragraphStyle,
+          previousKind: _blockIndex > 0 ? blocks[_blockIndex - 1].kind : null,
         );
         final minimumHeight = block.kind == ReaderBlockKind.image
             ? ReaderPaginator.imageHeightFor(spec)

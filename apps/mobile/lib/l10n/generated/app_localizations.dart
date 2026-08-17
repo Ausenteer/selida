@@ -326,11 +326,23 @@ abstract class AppLocalizations {
   /// **'Page animation'**
   String get pageAnimation;
 
+  /// No description provided for @assistanceLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Explanation language'**
+  String get assistanceLanguage;
+
   /// No description provided for @bookLanguage.
   ///
   /// In en, this message translates to:
   /// **'Book language'**
   String get bookLanguage;
+
+  /// No description provided for @russianLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Russian'**
+  String get russianLanguage;
 
   /// No description provided for @englishLanguage.
   ///
@@ -422,6 +434,12 @@ abstract class AppLocalizations {
   /// **'Save word'**
   String get saveWord;
 
+  /// No description provided for @saveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveAction;
+
   /// No description provided for @wordSaved.
   ///
   /// In en, this message translates to:
@@ -494,23 +512,35 @@ abstract class AppLocalizations {
   /// **'Explanation'**
   String get explanationTitle;
 
-  /// No description provided for @explanationSummaryLabel.
+  /// No description provided for @explanationGrammarLabel.
   ///
   /// In en, this message translates to:
-  /// **'In short'**
-  String get explanationSummaryLabel;
+  /// **'Grammar'**
+  String get explanationGrammarLabel;
 
-  /// No description provided for @explanationMeaningLabel.
+  /// No description provided for @explanationPhrasalVerbLabel.
   ///
   /// In en, this message translates to:
-  /// **'In this context'**
-  String get explanationMeaningLabel;
+  /// **'Phrasal verb'**
+  String get explanationPhrasalVerbLabel;
 
-  /// No description provided for @explanationBreakdownLabel.
+  /// No description provided for @explanationIdiomLabel.
   ///
   /// In en, this message translates to:
-  /// **'How it works'**
-  String get explanationBreakdownLabel;
+  /// **'Idiom'**
+  String get explanationIdiomLabel;
+
+  /// No description provided for @explanationFocusLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Explaining'**
+  String get explanationFocusLabel;
+
+  /// No description provided for @explanationStructureLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pattern'**
+  String get explanationStructureLabel;
 
   /// No description provided for @explanationLiteralLabel.
   ///
@@ -646,7 +676,7 @@ abstract class AppLocalizations {
   /// No description provided for @readerCompactProgress.
   ///
   /// In en, this message translates to:
-  /// **'{page} of {pageCount} · {percent}%'**
+  /// **'Page {page} of {pageCount} · {percent}%'**
   String readerCompactProgress(int page, String pageCount, int percent);
 
   /// No description provided for @readerProgressPreview.

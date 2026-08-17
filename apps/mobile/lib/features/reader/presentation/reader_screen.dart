@@ -25,6 +25,7 @@ import 'package:selida/l10n/generated/app_localizations.dart';
 
 part 'reader_chrome.dart';
 part 'reader_contents_sheet.dart';
+part 'reader_page_turn.dart';
 part 'reader_search_sheet.dart';
 part 'reader_settings_sheet.dart';
 part 'reader_support.dart';
@@ -78,8 +79,6 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   var _selectionActionsVisible = false;
   final List<ReaderLocation> _navigationHistory = <ReaderLocation>[];
   final Set<String> _adjacentPrefetchSchedules = <String>{};
-  int? _brightnessPointer;
-  double? _lastBrightnessY;
   OverlayEntry? _wordPopover;
   final ReaderBoundarySwipeTracker _boundarySwipeTracker =
       ReaderBoundarySwipeTracker();
@@ -177,227 +176,214 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   }) {
     final media = MediaQuery.of(context);
     final effectiveFontSize = media.textScaler.scale(preferences.fontSize);
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _onBrightnessPointerDown,
-      onPointerMove: _onBrightnessPointerMove,
-      onPointerUp: _onBrightnessPointerEnd,
-      onPointerCancel: _onBrightnessPointerEnd,
-      child: Stack(
-        children: <Widget>[
-          SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                preferences.horizontalMargin,
-                _readerTopInset,
-                preferences.horizontalMargin,
-                _readerBottomInset,
-              ),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final spec = ReaderLayoutSpec(
-                    width: constraints.maxWidth,
-                    height: constraints.maxHeight,
-                    fontSize: effectiveFontSize,
-                    lineHeight: preferences.lineHeight,
-                    locale: Locale(_bookLanguage),
-                    textColor: palette.text,
-                    linkColor: palette.accent,
-                    paragraphStyle: preferences.paragraphStyle,
-                    textAlignment: preferences.textAlignment,
-                    fontFamily: preferences.fontFamily,
+    return Stack(
+      children: <Widget>[
+        SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              preferences.horizontalMargin,
+              _readerTopInset,
+              preferences.horizontalMargin,
+              _readerBottomInset,
+            ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final spec = ReaderLayoutSpec(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  fontSize: effectiveFontSize,
+                  lineHeight: preferences.lineHeight,
+                  locale: Locale(_bookLanguage),
+                  textColor: palette.text,
+                  linkColor: palette.accent,
+                  paragraphStyle: preferences.paragraphStyle,
+                  textAlignment: preferences.textAlignment,
+                  fontFamily: preferences.fontFamily,
+                );
+                final identity = _pagination.identityFor(spec);
+                final key = '${_chapter.id}:${identity.fingerprint}';
+                _pagination.schedule(
+                  blocks: blocks,
+                  spec: spec,
+                  identity: identity,
+                  key: key,
+                  chapterId: _chapter.id,
+                  chapterLength: _chapter.lengthUtf16,
+                  currentTextOffset: _currentTextOffset,
+                  onInitialPage: _onInitialPageResolved,
+                );
+                final pages = _pagination.layoutKey == key
+                    ? _pagination.pages
+                    : null;
+                final prefetchKey = '$_chapterIndex:${identity.fingerprint}';
+                if (pages != null &&
+                    _pagination.complete &&
+                    _adjacentPrefetchSchedules.add(prefetchKey)) {
+                  unawaited(
+                    _prefetchAdjacentChapters(
+                      chapterIndex: _chapterIndex,
+                      spec: spec,
+                      identity: identity,
+                    ),
                   );
-                  final identity = _pagination.identityFor(spec);
-                  final key = '${_chapter.id}:${identity.fingerprint}';
-                  _pagination.schedule(
-                    blocks: blocks,
-                    spec: spec,
-                    identity: identity,
-                    key: key,
-                    chapterId: _chapter.id,
-                    chapterLength: _chapter.lengthUtf16,
-                    currentTextOffset: _currentTextOffset,
-                    onInitialPage: _onInitialPageResolved,
-                  );
-                  final pages = _pagination.layoutKey == key
-                      ? _pagination.pages
-                      : null;
-                  final prefetchKey = '$_chapterIndex:${identity.fingerprint}';
-                  if (pages != null &&
-                      _pagination.complete &&
-                      _adjacentPrefetchSchedules.add(prefetchKey)) {
-                    unawaited(
-                      _prefetchAdjacentChapters(
-                        chapterIndex: _chapterIndex,
+                }
+                if (pages == null || pages.isEmpty) {
+                  return _ReaderPageSkeleton(color: palette.skeleton);
+                }
+                return NotificationListener<ScrollNotification>(
+                  onNotification: _onPageScrollNotification,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    physics: const _ReaderPagePhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
+                    ),
+                    itemCount: pages.length,
+                    onPageChanged: (int index) => _onPageChanged(pages, index),
+                    itemBuilder: (BuildContext context, int index) {
+                      final surface = ReaderPageSurface(
+                        page: pages[index],
                         spec: spec,
-                        identity: identity,
-                      ),
-                    );
-                  }
-                  if (pages == null || pages.isEmpty) {
-                    return _ReaderPageSkeleton(color: palette.skeleton);
-                  }
-                  return NotificationListener<ScrollNotification>(
-                    onNotification: _onPageScrollNotification,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      physics: const PageScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics(),
-                      ),
-                      itemCount: pages.length,
-                      onPageChanged: (int index) =>
-                          _onPageChanged(pages, index),
-                      itemBuilder: (BuildContext context, int index) {
-                        return ReaderPageSurface(
-                          page: pages[index],
-                          spec: spec,
-                          activeSelection: _activeSelection,
-                          selectionIsControlled: true,
-                          selectionHandlesVisible: _selectionActionsVisible,
-                          focusedRange: _focusedWordRange,
-                          focusedColor: palette.accent.withValues(alpha: 0.16),
-                          savedRanges: <ReaderTextRange>[
-                            for (final occurrence in savedOccurrences)
-                              if (occurrence.sourceOffset case final offset?)
-                                ReaderTextRange(
-                                  startOffset: offset,
-                                  endOffset:
-                                      offset + occurrence.surfaceForm.length,
-                                ),
-                          ],
-                          selectionColor: palette.accent.withValues(alpha: 0.2),
-                          savedUnderlineColor: palette.savedUnderline,
-                          onWordTap: (ReaderWordHit hit) => _showWordPopover(
+                        activeSelection: _activeSelection,
+                        selectionIsControlled: true,
+                        selectionHandlesVisible: _selectionActionsVisible,
+                        focusedRange: _focusedWordRange,
+                        focusedColor: palette.accent.withValues(alpha: 0.12),
+                        savedRanges: <ReaderTextRange>[
+                          for (final occurrence in savedOccurrences)
+                            if (occurrence.sourceOffset case final offset?)
+                              ReaderTextRange(
+                                startOffset: offset,
+                                endOffset:
+                                    offset + occurrence.surfaceForm.length,
+                              ),
+                        ],
+                        selectionColor: palette.accent.withValues(alpha: 0.2),
+                        savedUnderlineColor: palette.savedUnderline,
+                        onWordTap: (ReaderWordHit hit) => _showWordPopover(
+                          hit: hit,
+                          horizontalMargin: preferences.horizontalMargin,
+                          palette: palette,
+                          savedOccurrence: _occurrenceAt(
+                            savedOccurrences,
+                            hit.startOffset,
+                          ),
+                          savedOccurrences: savedOccurrences,
+                        ),
+                        onLinkTap: _openInlineLink,
+                        onTextSelected: (ReaderSelectionHit hit) =>
+                            _showSelectionPopover(
+                              hit: hit,
+                              horizontalMargin: preferences.horizontalMargin,
+                              palette: palette,
+                              savedOccurrences: savedOccurrences,
+                            ),
+                        onSelectionChanged: (ReaderTextRange? selection) {
+                          setState(() {
+                            _activeSelection = selection;
+                            if (selection == null) {
+                              _crossChapterSelection = null;
+                            } else if (_crossChapterSelection
+                                case final cross?) {
+                              final maximumLength = cross.maximumRangeLengthFor(
+                                _chapterIndex,
+                              );
+                              final effectiveSelection =
+                                  selection.length <= maximumLength
+                                  ? selection
+                                  : _chapterIndex == cross.firstChapterIndex
+                                  ? ReaderTextRange(
+                                      startOffset:
+                                          selection.endOffset - maximumLength,
+                                      endOffset: selection.endOffset,
+                                    )
+                                  : ReaderTextRange(
+                                      startOffset: selection.startOffset,
+                                      endOffset:
+                                          selection.startOffset + maximumLength,
+                                    );
+                              _activeSelection = effectiveSelection;
+                              _crossChapterSelection = cross.updateRange(
+                                _chapterIndex,
+                                effectiveSelection,
+                              );
+                            }
+                            _selectionActionsVisible = selection != null;
+                          });
+                        },
+                        onSelectionReady: (ReaderSelectionHit hit) {
+                          setState(() {
+                            _selectionActionsVisible = _activeSelection != null;
+                          });
+                          _showSelectionPopover(
                             hit: hit,
                             horizontalMargin: preferences.horizontalMargin,
                             palette: palette,
-                            savedOccurrence: _occurrenceAt(
-                              savedOccurrences,
-                              hit.startOffset,
-                            ),
                             savedOccurrences: savedOccurrences,
-                          ),
-                          onLinkTap: _openInlineLink,
-                          onTextSelected: (ReaderTextSelection selection) =>
-                              unawaited(
-                                _showTextAssistance(
-                                  selection,
-                                  savedOccurrences: savedOccurrences,
-                                  canSavePhrase: true,
-                                ),
-                              ),
-                          onSelectionChanged: (ReaderTextRange? selection) {
-                            setState(() {
-                              _activeSelection = selection;
-                              if (selection == null) {
-                                _crossChapterSelection = null;
-                              } else if (_crossChapterSelection
-                                  case final cross?) {
-                                final maximumLength = cross
-                                    .maximumRangeLengthFor(_chapterIndex);
-                                final effectiveSelection =
-                                    selection.length <= maximumLength
-                                    ? selection
-                                    : _chapterIndex == cross.firstChapterIndex
-                                    ? ReaderTextRange(
-                                        startOffset:
-                                            selection.endOffset - maximumLength,
-                                        endOffset: selection.endOffset,
-                                      )
-                                    : ReaderTextRange(
-                                        startOffset: selection.startOffset,
-                                        endOffset:
-                                            selection.startOffset +
-                                            maximumLength,
-                                      );
-                                _activeSelection = effectiveSelection;
-                                _crossChapterSelection = cross.updateRange(
-                                  _chapterIndex,
-                                  effectiveSelection,
-                                );
-                              }
-                              _selectionActionsVisible = selection != null;
-                            });
-                          },
-                          onSelectionReady: () => setState(() {
-                            _selectionActionsVisible = _activeSelection != null;
-                          }),
-                          onSelectionEdgeRequested: (int direction) =>
-                              _extendSelectionAcrossPage(
-                                pages: pages,
-                                direction: direction,
-                                animate: preferences.pageAnimationEnabled,
-                              ),
-                          onBlankTap: (_) => _onBlankTap(),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: ColoredBox(
-                color: Colors.black.withValues(
-                  alpha: (1 - preferences.brightness) * 0.72,
-                ),
-              ),
-            ),
-          ),
-          _SelectionActions(
-            visible: _selectionActionsVisible && _activeSelection != null,
-            palette: palette,
-            onTranslate: () {
-              final selection = _activeSelection;
-              if (selection != null) {
-                unawaited(
-                  _showTextAssistance(
-                    ReaderTextSelection(
-                      startOffset: selection.startOffset,
-                      endOffset: selection.endOffset,
-                    ),
-                    savedOccurrences: savedOccurrences,
-                    canSavePhrase: true,
+                          );
+                        },
+                        onSelectionEdgeRequested: (int direction) =>
+                            _extendSelectionAcrossPage(
+                              pages: pages,
+                              direction: direction,
+                              animate: preferences.pageAnimationEnabled,
+                            ),
+                        onBlankTap: (_) => _onBlankTap(),
+                      );
+                      return _ReaderPageTurn(
+                        key: ValueKey<String>('reader-page-turn-$index'),
+                        controller: _pageController,
+                        pageIndex: index,
+                        enabled: preferences.pageAnimationEnabled,
+                        backgroundColor: palette.background,
+                        child: surface,
+                      );
+                    },
                   ),
                 );
-              }
-            },
-            onClose: _clearSelection,
+              },
+            ),
           ),
-          _ReaderChrome(
-            title: widget.document.book.title,
-            chapterTitle: _chapter.title,
-            progress: _bookProgress(_currentTextOffset),
-            pageNumber: _currentPageIndex + 1,
-            pageCount: _pagination.complete ? _pagination.pages?.length : null,
-            chapterNumber: _chapterIndex + 1,
-            chapterCount: widget.document.chapters.length,
-            canReturnToPreviousLocation: _navigationHistory.isNotEmpty,
-            palette: palette,
-            onBack: () {
-              _dismissWordPopover();
-              context.pop();
-            },
-            onReturnToPreviousLocation: _returnToPreviousLocation,
-            onContents: () {
-              _dismissWordPopover();
-              unawaited(_showContents());
-            },
-            onSearch: () {
-              _dismissWordPopover();
-              unawaited(_showSearch());
-            },
-            onSettings: () {
-              _dismissWordPopover();
-              unawaited(_showSettings());
-            },
-            onProgressChanged: _seekToBookProgress,
-            chapterForProgress: _chapterNumberForBookProgress,
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ColoredBox(
+              color: Colors.black.withValues(
+                alpha: (1 - preferences.brightness) * 0.72,
+              ),
+            ),
           ),
-        ],
-      ),
+        ),
+        _ReaderChrome(
+          title: widget.document.book.title,
+          chapterTitle: _chapter.title,
+          progress: _bookProgress(_currentTextOffset),
+          pageNumber: _currentPageIndex + 1,
+          pageCount: _pagination.complete ? _pagination.pages?.length : null,
+          chapterNumber: _chapterIndex + 1,
+          chapterCount: widget.document.chapters.length,
+          canReturnToPreviousLocation: _navigationHistory.isNotEmpty,
+          palette: palette,
+          onBack: () {
+            _dismissWordPopover();
+            context.pop();
+          },
+          onReturnToPreviousLocation: _returnToPreviousLocation,
+          onContents: () {
+            _dismissWordPopover();
+            unawaited(_showContents());
+          },
+          onSearch: () {
+            _dismissWordPopover();
+            unawaited(_showSearch());
+          },
+          onSettings: () {
+            _dismissWordPopover();
+            unawaited(_showSettings());
+          },
+          onProgressChanged: _seekToBookProgress,
+          chapterForProgress: _chapterNumberForBookProgress,
+        ),
+      ],
     );
   }
 
@@ -586,8 +572,8 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       unawaited(
         _pageController.animateToPage(
           page,
-          duration: const Duration(milliseconds: 125),
-          curve: Curves.easeOutCubic,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutQuart,
         ),
       );
     } else {
@@ -706,35 +692,6 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     return null;
   }
 
-  void _onBrightnessPointerDown(PointerDownEvent event) {
-    final width = MediaQuery.sizeOf(context).width;
-    if (event.position.dx >= width - 30) {
-      _brightnessPointer = event.pointer;
-      _lastBrightnessY = event.position.dy;
-    }
-  }
-
-  void _onBrightnessPointerMove(PointerMoveEvent event) {
-    if (_brightnessPointer != event.pointer || _lastBrightnessY == null) {
-      return;
-    }
-    final delta = (_lastBrightnessY! - event.position.dy) / 260;
-    if (delta.abs() < 0.002) {
-      return;
-    }
-    _lastBrightnessY = event.position.dy;
-    final notifier = ref.read(readerPreferencesProvider.notifier);
-    final current = ref.read(readerPreferencesProvider).brightness;
-    notifier.setBrightness(current + delta);
-  }
-
-  void _onBrightnessPointerEnd(PointerEvent event) {
-    if (_brightnessPointer == event.pointer) {
-      _brightnessPointer = null;
-      _lastBrightnessY = null;
-    }
-  }
-
   Future<void> _persistReaderPosition({double? progress}) async {
     await _database.saveReaderPosition(
       bookId: widget.document.book.id,
@@ -841,9 +798,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     final request = WordTranslationRequest(
       sourceLanguage: _bookLanguage,
       targetLanguage: 'ru',
-      interfaceLanguage: Localizations.localeOf(context).languageCode == 'en'
-          ? 'en'
-          : 'ru',
+      interfaceLanguage: _assistanceLanguageCode,
       source: hit.word,
       context: sentence.text,
     );
@@ -895,6 +850,198 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                         canSavePhrase: true,
                       ),
                     ),
+                    onExplain: () => unawaited(
+                      _showTextAssistance(
+                        ReaderTextSelection(
+                          startOffset: hit.startOffset,
+                          endOffset: hit.endOffset,
+                        ),
+                        savedOccurrences: savedOccurrences,
+                        canSavePhrase: true,
+                        showExplanationInitially: true,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_wordPopover!);
+  }
+
+  void _showSelectionPopover({
+    required ReaderSelectionHit hit,
+    required double horizontalMargin,
+    required ReaderPalette palette,
+    required List<StoredWordOccurrence> savedOccurrences,
+  }) {
+    final selection = hit.selection;
+    final chapterText = _chapter.plainText;
+    final start = selection.startOffset.clamp(0, chapterText.length);
+    final end = selection.endOffset.clamp(start, chapterText.length);
+    final crossSelection = _crossChapterSelection;
+    final String source;
+    final String contextSentence;
+    final int contextPhraseStart;
+    final bool canSave;
+    if (crossSelection != null) {
+      source = crossSelection
+          .selectedText(
+            widget.document.chapters
+                .map((StoredChapter chapter) => chapter.plainText)
+                .toList(growable: false),
+          )
+          .trim();
+      contextSentence = source;
+      contextPhraseStart = 0;
+      canSave = false;
+    } else {
+      if (end <= start) {
+        return;
+      }
+      source = chapterText.substring(start, end).trim();
+      final sentence = sentenceContextAround(
+        text: chapterText,
+        startOffset: start,
+        endOffset: end,
+      );
+      contextSentence = sentence.text;
+      contextPhraseStart = start - sentence.startOffset;
+      canSave = true;
+    }
+    if (source.isEmpty) {
+      return;
+    }
+    if (crossSelection == null && isSingleVocabularyItem(source)) {
+      _showWordPopover(
+        hit: ReaderWordHit(
+          word: source,
+          startOffset: start,
+          endOffset: end,
+          rect: hit.rect,
+        ),
+        horizontalMargin: horizontalMargin,
+        palette: palette,
+        savedOccurrence: _occurrenceMatching(savedOccurrences, start, source),
+        savedOccurrences: savedOccurrences,
+      );
+      return;
+    }
+
+    _wordPopover?.remove();
+    _wordPopover = null;
+    final overlay = Overlay.of(context);
+    final media = MediaQuery.of(context);
+    final selectionRect = hit.rect.shift(
+      Offset(horizontalMargin, media.padding.top + _readerTopInset),
+    );
+    final placement = calculateWordPopoverPlacement(
+      screenSize: media.size,
+      safePadding: media.padding,
+      wordRect: selectionRect,
+      estimatedHeight: 245,
+    );
+    final request = TextAssistanceRequest(
+      sourceLanguage: _bookLanguage,
+      targetLanguage: 'ru',
+      interfaceLanguage: _assistanceLanguageCode,
+      source: source.length > 1000 ? source.substring(0, 1000) : source,
+      context: contextSentence,
+    );
+    final sentenceText = contextSentence.trim();
+    final sentenceSelection = crossSelection == null && sentenceText != source
+        ? sentenceContextAround(
+            text: chapterText,
+            startOffset: start,
+            endOffset: end,
+          )
+        : null;
+    final savedOccurrence = canSave
+        ? _occurrenceMatching(savedOccurrences, start, source)
+        : null;
+    _wordPopover = OverlayEntry(
+      builder: (BuildContext context) => Stack(
+        children: <Widget>[
+          Positioned(
+            left: 0,
+            right: 0,
+            top: media.padding.top + 66,
+            bottom: media.padding.bottom + 50,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _dismissWordPopover,
+              child: const ColoredBox(color: Colors.transparent),
+            ),
+          ),
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: _WordPopoverLayoutDelegate(
+                placement: placement,
+                wordRect: selectionRect,
+                safePadding: media.padding,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: _AnchoredWordPopover(
+                  showBelow: placement.showBelow,
+                  caretX: placement.caretX,
+                  palette: palette,
+                  child: _FragmentTranslationPopover(
+                    request: request,
+                    sourceText: source,
+                    savesAsWord: false,
+                    palette: palette,
+                    savedOccurrence: savedOccurrence,
+                    onSave: canSave
+                        ? (FragmentTranslation translation) async {
+                            final service = ref.read(vocabularyServiceProvider);
+                            final vocabularyId = await service.savePhrase(
+                              request: request,
+                              translation: translation,
+                              contextSentence: contextSentence,
+                              contextPhraseStart: contextPhraseStart,
+                              sourceBookId: widget.document.book.id,
+                              sourceBookTitle: widget.document.book.title,
+                              sourceChapterId: _chapter.id,
+                              sourceChapterTitle: _chapter.title,
+                              sourceOffset: start,
+                              savesAsWord: false,
+                            );
+                            return service.occurrenceAt(
+                              vocabularyId: vocabularyId,
+                              sourceBookId: widget.document.book.id,
+                              sourceOffset: start,
+                            );
+                          }
+                        : null,
+                    onRemove: canSave
+                        ? (StoredWordOccurrence occurrence) => ref
+                              .read(vocabularyServiceProvider)
+                              .removeOccurrence(occurrence)
+                        : null,
+                    onTranslateSentence: sentenceSelection == null
+                        ? null
+                        : () => unawaited(
+                            _showTextAssistance(
+                              ReaderTextSelection(
+                                startOffset: sentenceSelection.startOffset,
+                                endOffset: sentenceSelection.endOffset,
+                              ),
+                              savedOccurrences: savedOccurrences,
+                              canSavePhrase: true,
+                            ),
+                          ),
+                    onExplain: () => unawaited(
+                      _showTextAssistance(
+                        ReaderTextSelection(startOffset: start, endOffset: end),
+                        savedOccurrences: savedOccurrences,
+                        canSavePhrase: canSave,
+                        showExplanationInitially: true,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -925,6 +1072,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     ReaderTextSelection selection, {
     required List<StoredWordOccurrence> savedOccurrences,
     bool canSavePhrase = false,
+    bool showExplanationInitially = false,
   }) async {
     _dismissWordPopover();
     final chapterText = _chapter.plainText;
@@ -972,12 +1120,22 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     final request = TextAssistanceRequest(
       sourceLanguage: _bookLanguage,
       targetLanguage: 'ru',
-      interfaceLanguage: Localizations.localeOf(context).languageCode == 'en'
-          ? 'en'
-          : 'ru',
+      interfaceLanguage: _assistanceLanguageCode,
       source: source.length > 1000 ? source.substring(0, 1000) : source,
       context: contextSentence,
     );
+    final sentenceText = contextSentence.trim();
+    final sentenceRequest = crossSelection == null && sentenceText != source
+        ? TextAssistanceRequest(
+            sourceLanguage: _bookLanguage,
+            targetLanguage: 'ru',
+            interfaceLanguage: _assistanceLanguageCode,
+            source: sentenceText.length > 1000
+                ? sentenceText.substring(0, 1000)
+                : sentenceText,
+            context: contextSentence,
+          )
+        : null;
     if (mounted) {
       setState(() => _selectionActionsVisible = false);
     }
@@ -989,8 +1147,11 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       builder: (BuildContext context) => _TextAssistanceSheet(
         request: request,
         sourceText: request.source,
+        sentenceRequest: sentenceRequest,
+        sentenceText: sentenceRequest?.source,
         savesAsWord: savesAsWord,
         savedOccurrence: savedOccurrence,
+        showExplanationInitially: showExplanationInitially,
         onSave: canSaveCurrentSelection
             ? (FragmentTranslation translation) async {
                 final service = ref.read(vocabularyServiceProvider);
@@ -1037,6 +1198,12 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       );
     }
   }
+
+  String get _assistanceLanguageCode =>
+      ref.read(readerPreferencesProvider).assistanceLanguage ==
+          ReaderAssistanceLanguage.english
+      ? 'en'
+      : 'ru';
 
   Future<void> _showSettings() {
     return showModalBottomSheet<void>(

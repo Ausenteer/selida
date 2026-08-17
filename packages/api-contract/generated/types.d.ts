@@ -116,9 +116,12 @@ export interface components {
             translation: string;
         };
         TextExplanationResponse: {
-            summary: string;
-            meaningInContext: string;
-            breakdown: string;
+            /** @enum {string} */
+            focusType: "grammar" | "phrasalVerb" | "idiom";
+            focusText: string;
+            title: string;
+            explanation: string;
+            structure: string;
             literalTranslation: string;
             naturalTranslation: string;
             examples: components["schemas"]["TextExplanationExample"][];

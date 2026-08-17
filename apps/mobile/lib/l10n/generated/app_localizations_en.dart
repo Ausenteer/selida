@@ -128,7 +128,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pageAnimation => 'Page animation';
 
   @override
+  String get assistanceLanguage => 'Explanation language';
+
+  @override
   String get bookLanguage => 'Book language';
+
+  @override
+  String get russianLanguage => 'Russian';
 
   @override
   String get englishLanguage => 'English';
@@ -180,6 +186,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get saveWord => 'Save word';
 
   @override
+  String get saveAction => 'Save';
+
+  @override
   String get wordSaved => 'Word saved';
 
   @override
@@ -218,13 +227,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get explanationTitle => 'Explanation';
 
   @override
-  String get explanationSummaryLabel => 'In short';
+  String get explanationGrammarLabel => 'Grammar';
 
   @override
-  String get explanationMeaningLabel => 'In this context';
+  String get explanationPhrasalVerbLabel => 'Phrasal verb';
 
   @override
-  String get explanationBreakdownLabel => 'How it works';
+  String get explanationIdiomLabel => 'Idiom';
+
+  @override
+  String get explanationFocusLabel => 'Explaining';
+
+  @override
+  String get explanationStructureLabel => 'Pattern';
 
   @override
   String get explanationLiteralLabel => 'Literally';
@@ -301,7 +316,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String readerCompactProgress(int page, String pageCount, int percent) {
-    return '$page of $pageCount · $percent%';
+    return 'Page $page of $pageCount · $percent%';
   }
 
   @override

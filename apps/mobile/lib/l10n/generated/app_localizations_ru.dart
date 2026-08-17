@@ -128,7 +128,13 @@ class AppLocalizationsRu extends AppLocalizations {
   String get pageAnimation => 'Анимация перелистывания';
 
   @override
+  String get assistanceLanguage => 'Язык объяснений';
+
+  @override
   String get bookLanguage => 'Язык книги';
+
+  @override
+  String get russianLanguage => 'Русский';
 
   @override
   String get englishLanguage => 'Английский';
@@ -180,6 +186,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get saveWord => 'Сохранить слово';
 
   @override
+  String get saveAction => 'Сохранить';
+
+  @override
   String get wordSaved => 'Слово сохранено';
 
   @override
@@ -218,13 +227,19 @@ class AppLocalizationsRu extends AppLocalizations {
   String get explanationTitle => 'Объяснение';
 
   @override
-  String get explanationSummaryLabel => 'Коротко';
+  String get explanationGrammarLabel => 'Грамматика';
 
   @override
-  String get explanationMeaningLabel => 'В этом контексте';
+  String get explanationPhrasalVerbLabel => 'Фразовый глагол';
 
   @override
-  String get explanationBreakdownLabel => 'Как устроено';
+  String get explanationIdiomLabel => 'Идиома';
+
+  @override
+  String get explanationFocusLabel => 'Объясняем';
+
+  @override
+  String get explanationStructureLabel => 'Схема';
 
   @override
   String get explanationLiteralLabel => 'Дословно';
@@ -302,7 +317,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String readerCompactProgress(int page, String pageCount, int percent) {
-    return '$page из $pageCount · $percent%';
+    return 'Стр. $page из $pageCount · $percent%';
   }
 
   @override

@@ -13,9 +13,11 @@ part of openapi.api;
 class TextExplanationResponse {
   /// Returns a new [TextExplanationResponse] instance.
   TextExplanationResponse({
-    required this.summary,
-    required this.meaningInContext,
-    required this.breakdown,
+    required this.focusType,
+    required this.focusText,
+    required this.title,
+    required this.explanation,
+    required this.structure,
     required this.literalTranslation,
     required this.naturalTranslation,
     this.examples = const [],
@@ -23,11 +25,15 @@ class TextExplanationResponse {
     required this.cached,
   });
 
-  final String summary;
+  final TextExplanationResponseFocusTypeEnum focusType;
 
-  final String meaningInContext;
+  final String focusText;
 
-  final String breakdown;
+  final String title;
+
+  final String explanation;
+
+  final String structure;
 
   final String literalTranslation;
 
@@ -43,9 +49,11 @@ class TextExplanationResponse {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is TextExplanationResponse &&
-          other.summary == summary &&
-          other.meaningInContext == meaningInContext &&
-          other.breakdown == breakdown &&
+          other.focusType == focusType &&
+          other.focusText == focusText &&
+          other.title == title &&
+          other.explanation == explanation &&
+          other.structure == structure &&
           other.literalTranslation == literalTranslation &&
           other.naturalTranslation == naturalTranslation &&
           _deepEquality.equals(other.examples, examples) &&
@@ -55,9 +63,11 @@ class TextExplanationResponse {
   @override
   int get hashCode =>
       // ignore: unnecessary_parenthesis
-      (summary.hashCode) +
-      (meaningInContext.hashCode) +
-      (breakdown.hashCode) +
+      (focusType.hashCode) +
+      (focusText.hashCode) +
+      (title.hashCode) +
+      (explanation.hashCode) +
+      (structure.hashCode) +
       (literalTranslation.hashCode) +
       (naturalTranslation.hashCode) +
       (examples.hashCode) +
@@ -66,13 +76,15 @@ class TextExplanationResponse {
 
   @override
   String toString() =>
-      'TextExplanationResponse[summary=$summary, meaningInContext=$meaningInContext, breakdown=$breakdown, literalTranslation=$literalTranslation, naturalTranslation=$naturalTranslation, examples=$examples, commonMistake=$commonMistake, cached=$cached]';
+      'TextExplanationResponse[focusType=$focusType, focusText=$focusText, title=$title, explanation=$explanation, structure=$structure, literalTranslation=$literalTranslation, naturalTranslation=$naturalTranslation, examples=$examples, commonMistake=$commonMistake, cached=$cached]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
-    json[r'summary'] = this.summary;
-    json[r'meaningInContext'] = this.meaningInContext;
-    json[r'breakdown'] = this.breakdown;
+    json[r'focusType'] = this.focusType;
+    json[r'focusText'] = this.focusText;
+    json[r'title'] = this.title;
+    json[r'explanation'] = this.explanation;
+    json[r'structure'] = this.structure;
     json[r'literalTranslation'] = this.literalTranslation;
     json[r'naturalTranslation'] = this.naturalTranslation;
     json[r'examples'] = this.examples;
@@ -84,9 +96,11 @@ class TextExplanationResponse {
   /// Clones this instance of [TextExplanationResponse] and returns a new one where some of the
   /// properties have changed.
   TextExplanationResponse copyWith({
-    String? summary,
-    String? meaningInContext,
-    String? breakdown,
+    TextExplanationResponseFocusTypeEnum? focusType,
+    String? focusText,
+    String? title,
+    String? explanation,
+    String? structure,
     String? literalTranslation,
     String? naturalTranslation,
     List<TextExplanationExample>? examples,
@@ -94,9 +108,11 @@ class TextExplanationResponse {
     bool? cached,
   }) =>
       TextExplanationResponse(
-        summary: summary ?? this.summary,
-        meaningInContext: meaningInContext ?? this.meaningInContext,
-        breakdown: breakdown ?? this.breakdown,
+        focusType: focusType ?? this.focusType,
+        focusText: focusText ?? this.focusText,
+        title: title ?? this.title,
+        explanation: explanation ?? this.explanation,
+        structure: structure ?? this.structure,
         literalTranslation: literalTranslation ?? this.literalTranslation,
         naturalTranslation: naturalTranslation ?? this.naturalTranslation,
         examples: examples ?? this.examples,
@@ -115,18 +131,26 @@ class TextExplanationResponse {
       // Note 1: the values aren't checked for validity beyond being non-null.
       // Note 2: this code is stripped in release mode!
       assert(() {
-        assert(json.containsKey(r'summary'),
-            'Required key "TextExplanationResponse[summary]" is missing from JSON.');
-        assert(json[r'summary'] != null,
-            'Required key "TextExplanationResponse[summary]" has a null value in JSON.');
-        assert(json.containsKey(r'meaningInContext'),
-            'Required key "TextExplanationResponse[meaningInContext]" is missing from JSON.');
-        assert(json[r'meaningInContext'] != null,
-            'Required key "TextExplanationResponse[meaningInContext]" has a null value in JSON.');
-        assert(json.containsKey(r'breakdown'),
-            'Required key "TextExplanationResponse[breakdown]" is missing from JSON.');
-        assert(json[r'breakdown'] != null,
-            'Required key "TextExplanationResponse[breakdown]" has a null value in JSON.');
+        assert(json.containsKey(r'focusType'),
+            'Required key "TextExplanationResponse[focusType]" is missing from JSON.');
+        assert(json[r'focusType'] != null,
+            'Required key "TextExplanationResponse[focusType]" has a null value in JSON.');
+        assert(json.containsKey(r'focusText'),
+            'Required key "TextExplanationResponse[focusText]" is missing from JSON.');
+        assert(json[r'focusText'] != null,
+            'Required key "TextExplanationResponse[focusText]" has a null value in JSON.');
+        assert(json.containsKey(r'title'),
+            'Required key "TextExplanationResponse[title]" is missing from JSON.');
+        assert(json[r'title'] != null,
+            'Required key "TextExplanationResponse[title]" has a null value in JSON.');
+        assert(json.containsKey(r'explanation'),
+            'Required key "TextExplanationResponse[explanation]" is missing from JSON.');
+        assert(json[r'explanation'] != null,
+            'Required key "TextExplanationResponse[explanation]" has a null value in JSON.');
+        assert(json.containsKey(r'structure'),
+            'Required key "TextExplanationResponse[structure]" is missing from JSON.');
+        assert(json[r'structure'] != null,
+            'Required key "TextExplanationResponse[structure]" has a null value in JSON.');
         assert(json.containsKey(r'literalTranslation'),
             'Required key "TextExplanationResponse[literalTranslation]" is missing from JSON.');
         assert(json[r'literalTranslation'] != null,
@@ -151,9 +175,12 @@ class TextExplanationResponse {
       }());
 
       return TextExplanationResponse(
-        summary: mapValueOfType<String>(json, r'summary')!,
-        meaningInContext: mapValueOfType<String>(json, r'meaningInContext')!,
-        breakdown: mapValueOfType<String>(json, r'breakdown')!,
+        focusType:
+            TextExplanationResponseFocusTypeEnum.fromJson(json[r'focusType'])!,
+        focusText: mapValueOfType<String>(json, r'focusText')!,
+        title: mapValueOfType<String>(json, r'title')!,
+        explanation: mapValueOfType<String>(json, r'explanation')!,
+        structure: mapValueOfType<String>(json, r'structure')!,
         literalTranslation:
             mapValueOfType<String>(json, r'literalTranslation')!,
         naturalTranslation:
@@ -217,13 +244,102 @@ class TextExplanationResponse {
 
   /// The list of required keys that must be present in a JSON.
   static const requiredKeys = <String>{
-    'summary',
-    'meaningInContext',
-    'breakdown',
+    'focusType',
+    'focusText',
+    'title',
+    'explanation',
+    'structure',
     'literalTranslation',
     'naturalTranslation',
     'examples',
     'commonMistake',
     'cached',
   };
+}
+
+enum TextExplanationResponseFocusTypeEnum {
+  grammar._(r'grammar'),
+  phrasalVerb._(r'phrasalVerb'),
+  idiom._(r'idiom'),
+  ;
+
+  /// Instantiate a new enum with the provided value.
+  const TextExplanationResponseFocusTypeEnum._(this._value);
+
+  /// The underlying value of this enum member.
+  final String _value;
+
+  @override
+  String toString() => _value;
+
+  /// Encodes this enum as a value suitable for JSON.
+  String toJson() => _value;
+
+  /// Returns the instance of [TextExplanationResponseFocusTypeEnum] that was successfully decoded
+  /// from the passed [value] on success, null otherwise.
+  static TextExplanationResponseFocusTypeEnum? fromJson(dynamic value) =>
+      TextExplanationResponseFocusTypeEnumTypeTransformer().decode(value);
+
+  /// Returns a [List] containing instances of [TextExplanationResponseFocusTypeEnum]
+  /// that were successfully decoded from the passed [JSON][json].
+  static List<TextExplanationResponseFocusTypeEnum> listFromJson(
+    dynamic json, {
+    bool growable = false,
+  }) {
+    final result = <TextExplanationResponseFocusTypeEnum>[];
+    if (json is List && json.isNotEmpty) {
+      for (final row in json) {
+        final value = TextExplanationResponseFocusTypeEnum.fromJson(row);
+        if (value != null) {
+          result.add(value);
+        }
+      }
+    }
+    return result.toList(growable: growable);
+  }
+}
+
+/// Transformation class that can [encode] an instance of [TextExplanationResponseFocusTypeEnum] to String,
+/// and [decode] dynamic data back to [TextExplanationResponseFocusTypeEnum].
+class TextExplanationResponseFocusTypeEnumTypeTransformer {
+  factory TextExplanationResponseFocusTypeEnumTypeTransformer() => _instance ??=
+      const TextExplanationResponseFocusTypeEnumTypeTransformer._();
+
+  const TextExplanationResponseFocusTypeEnumTypeTransformer._();
+
+  String encode(TextExplanationResponseFocusTypeEnum data) => data._value;
+
+  /// Returns the instance of [TextExplanationResponseFocusTypeEnum] that was successfully decoded
+  /// from the passed [data] value on success, null otherwise.
+  ///
+  /// If [allowNull] is true and the [dynamic value][data] cannot be decoded successfully,
+  /// then null is returned. However, if [allowNull] is false and the [dynamic value][data]
+  /// cannot be decoded successfully, then an [UnimplementedError] is thrown.
+  ///
+  /// The [allowNull] is very handy when an API changes and a new enum value is added or removed,
+  /// and users are still using an old app with the old code.
+  TextExplanationResponseFocusTypeEnum? decode(dynamic data,
+      {bool allowNull = true}) {
+    if (data is TextExplanationResponseFocusTypeEnum) {
+      return data;
+    }
+    if (data != null) {
+      switch (data) {
+        case r'grammar':
+          return TextExplanationResponseFocusTypeEnum.grammar;
+        case r'phrasalVerb':
+          return TextExplanationResponseFocusTypeEnum.phrasalVerb;
+        case r'idiom':
+          return TextExplanationResponseFocusTypeEnum.idiom;
+        default:
+          if (!allowNull) {
+            throw ArgumentError('Unknown enum value to decode: $data');
+          }
+      }
+    }
+    return null;
+  }
+
+  /// The singleton instance of this transformer.
+  static TextExplanationResponseFocusTypeEnumTypeTransformer? _instance;
 }

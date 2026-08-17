@@ -138,6 +138,31 @@ final class _ReaderSettingsSheet extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             Text(
+              strings.assistanceLanguage,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<ReaderAssistanceLanguage>(
+              segments: <ButtonSegment<ReaderAssistanceLanguage>>[
+                ButtonSegment<ReaderAssistanceLanguage>(
+                  value: ReaderAssistanceLanguage.russian,
+                  label: Text(strings.russianLanguage),
+                ),
+                ButtonSegment<ReaderAssistanceLanguage>(
+                  value: ReaderAssistanceLanguage.english,
+                  label: Text(strings.englishLanguage),
+                ),
+              ],
+              selected: <ReaderAssistanceLanguage>{
+                preferences.assistanceLanguage,
+              },
+              onSelectionChanged: (Set<ReaderAssistanceLanguage> value) {
+                notifier.setAssistanceLanguage(value.single);
+              },
+              showSelectedIcon: false,
+            ),
+            const SizedBox(height: 18),
+            Text(
               strings.bookLanguage,
               style: Theme.of(context).textTheme.titleMedium,
             ),

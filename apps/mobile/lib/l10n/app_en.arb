@@ -41,7 +41,9 @@
   "margins": "Margins",
   "readerBrightness": "Brightness",
   "pageAnimation": "Page animation",
+  "assistanceLanguage": "Explanation language",
   "bookLanguage": "Book language",
+  "russianLanguage": "Russian",
   "englishLanguage": "English",
   "greekLanguage": "Greek",
   "theme": "Theme",
@@ -60,6 +62,7 @@
   "translationUnavailable": "The translation could not be loaded.",
   "translationInvalid": "The service returned an invalid response.",
   "saveWord": "Save word",
+  "saveAction": "Save",
   "wordSaved": "Word saved",
   "removeFromDictionary": "Remove from dictionary",
   "savedVocabularyStatus": "Already in dictionary · {status}",
@@ -75,9 +78,11 @@
   "fragmentTranslationTitle": "Translation",
   "explainText": "Explain",
   "explanationTitle": "Explanation",
-  "explanationSummaryLabel": "In short",
-  "explanationMeaningLabel": "In this context",
-  "explanationBreakdownLabel": "How it works",
+  "explanationGrammarLabel": "Grammar",
+  "explanationPhrasalVerbLabel": "Phrasal verb",
+  "explanationIdiomLabel": "Idiom",
+  "explanationFocusLabel": "Explaining",
+  "explanationStructureLabel": "Pattern",
   "explanationLiteralLabel": "Literally",
   "explanationNaturalLabel": "Natural translation",
   "explanationExamplesLabel": "Examples",
@@ -113,7 +118,7 @@
       "chapterCount": {"type": "int"}
     }
   },
-  "readerCompactProgress": "{page} of {pageCount} · {percent}%",
+  "readerCompactProgress": "Page {page} of {pageCount} · {percent}%",
   "@readerCompactProgress": {
     "placeholders": {
       "page": {"type": "int"},

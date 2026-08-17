@@ -151,6 +151,9 @@ void main() {
     );
     await handleGesture.moveTo(origin + const Offset(319, 30));
     await tester.pump();
+    expect(edgeDirection, 0);
+    await handleGesture.moveTo(origin + const Offset(345, 30));
+    await tester.pump();
     await handleGesture.up();
     expect(edgeDirection, 1);
   });

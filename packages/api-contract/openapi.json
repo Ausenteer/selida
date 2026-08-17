@@ -330,9 +330,11 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "summary",
-          "meaningInContext",
-          "breakdown",
+          "focusType",
+          "focusText",
+          "title",
+          "explanation",
+          "structure",
           "literalTranslation",
           "naturalTranslation",
           "examples",
@@ -340,15 +342,23 @@
           "cached"
         ],
         "properties": {
-          "summary": {
+          "focusType": {
+            "type": "string",
+            "enum": ["grammar", "phrasalVerb", "idiom"]
+          },
+          "focusText": {
             "type": "string",
             "minLength": 1
           },
-          "meaningInContext": {
+          "title": {
             "type": "string",
             "minLength": 1
           },
-          "breakdown": {
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "structure": {
             "type": "string",
             "minLength": 1
           },

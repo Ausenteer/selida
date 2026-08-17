@@ -132,7 +132,7 @@ test('fragment translation and explanation use separate caches', async () => {
   assert.equal(fragment.json().translation, 'шла домой');
   assert.equal(fragmentCached.json().cached, true);
   assert.equal(
-    explanation.json().meaningInContext,
+    explanation.json().explanation,
     'Past Continuous описывает процесс.',
   );
   assert.equal(fragmentCalls, 1);
@@ -140,11 +140,13 @@ test('fragment translation and explanation use separate caches', async () => {
   await app.close();
 });
 
-function explanationResult(meaningInContext: string): TextExplanationResult {
+function explanationResult(explanation: string): TextExplanationResult {
   return {
-    summary: 'Краткое объяснение.',
-    meaningInContext,
-    breakdown: 'Разбор конструкции.',
+    focusType: 'grammar',
+    focusText: 'was walking',
+    title: 'Past Continuous',
+    explanation,
+    structure: 'was/were + verb-ing',
     literalTranslation: '',
     naturalTranslation: 'шла домой',
     examples: [],

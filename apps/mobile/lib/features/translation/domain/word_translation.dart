@@ -168,12 +168,16 @@ final class TextExplanationExample {
   };
 }
 
+enum TextExplanationFocus { grammar, phrasalVerb, idiom }
+
 @immutable
 final class TextExplanation {
   const TextExplanation({
-    required this.summary,
-    required this.meaningInContext,
-    required this.breakdown,
+    required this.focus,
+    required this.focusText,
+    required this.title,
+    required this.explanation,
+    required this.structure,
     required this.literalTranslation,
     required this.naturalTranslation,
     required this.examples,
@@ -198,14 +202,23 @@ final class TextExplanation {
       return value.trim();
     }
 
+    final focusName = json['focusType'];
+    final focus = TextExplanationFocus.values
+        .where((TextExplanationFocus value) => value.name == focusName)
+        .firstOrNull;
+    if (focus == null) {
+      throw const FormatException('Invalid text explanation focus');
+    }
     final rawExamples = json['examples'];
     if (rawExamples is! List<Object?> || rawExamples.length > 2) {
       throw const FormatException('Invalid text explanation examples');
     }
     return TextExplanation(
-      summary: requiredString('summary'),
-      meaningInContext: requiredString('meaningInContext'),
-      breakdown: requiredString('breakdown'),
+      focus: focus,
+      focusText: requiredString('focusText'),
+      title: requiredString('title'),
+      explanation: requiredString('explanation'),
+      structure: requiredString('structure'),
       literalTranslation: optionalString('literalTranslation'),
       naturalTranslation: requiredString('naturalTranslation'),
       examples: List<TextExplanationExample>.unmodifiable(
@@ -219,9 +232,11 @@ final class TextExplanation {
     );
   }
 
-  final String summary;
-  final String meaningInContext;
-  final String breakdown;
+  final TextExplanationFocus focus;
+  final String focusText;
+  final String title;
+  final String explanation;
+  final String structure;
   final String literalTranslation;
   final String naturalTranslation;
   final List<TextExplanationExample> examples;
@@ -229,9 +244,11 @@ final class TextExplanation {
   final bool fromCache;
 
   TextExplanation asCached() => TextExplanation(
-    summary: summary,
-    meaningInContext: meaningInContext,
-    breakdown: breakdown,
+    focus: focus,
+    focusText: focusText,
+    title: title,
+    explanation: explanation,
+    structure: structure,
     literalTranslation: literalTranslation,
     naturalTranslation: naturalTranslation,
     examples: examples,
@@ -240,9 +257,11 @@ final class TextExplanation {
   );
 
   Map<String, Object> toJson() => <String, Object>{
-    'summary': summary,
-    'meaningInContext': meaningInContext,
-    'breakdown': breakdown,
+    'focusType': focus.name,
+    'focusText': focusText,
+    'title': title,
+    'explanation': explanation,
+    'structure': structure,
     'literalTranslation': literalTranslation,
     'naturalTranslation': naturalTranslation,
     'examples': examples.map((example) => example.toJson()).toList(),

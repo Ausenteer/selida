@@ -159,6 +159,50 @@ void main() {
     );
   });
 
+  test('book typography gives headings air and uses a compact indent', () {
+    const heading = 'A quiet chapter';
+    const first = 'The opening paragraph follows the heading.';
+    const second = 'The next paragraph continues the scene.';
+    const blocks = <ReaderBlock>[
+      ReaderBlock(
+        kind: ReaderBlockKind.heading,
+        text: heading,
+        startOffset: 0,
+        endOffset: heading.length,
+      ),
+      ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: first,
+        startOffset: heading.length + 2,
+        endOffset: heading.length + 2 + first.length,
+      ),
+      ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: second,
+        startOffset: heading.length + 4 + first.length,
+        endOffset: heading.length + 4 + first.length + second.length,
+      ),
+    ];
+    const spec = ReaderLayoutSpec(
+      width: 320,
+      height: 600,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+    );
+
+    final segments = ReaderPaginator.paginate(
+      blocks: blocks,
+      spec: spec,
+    ).single.segments;
+
+    expect(ReaderPaginator.paragraphIndent, '\u2002');
+    expect(segments[1].top - segments[0].height, 12);
+    expect(segments[1].indentFirstLine, isFalse);
+    expect(segments[2].indentFirstLine, isTrue);
+  });
+
   test('rich spans, images, font and alignment survive pagination', () {
     const text = 'Read this linked passage';
     final blocks = <ReaderBlock>[
@@ -226,5 +270,33 @@ void main() {
     expect(segments.last.kind, ReaderBlockKind.image);
     expect(segments.last.resourcePath, '/tmp/map.png');
     expect(segments.last.altText, 'Map');
+  });
+
+  test('justified text hyphenates without changing source word bounds', () {
+    const text = 'Mara left the village before sunrise, carrying a notebook.';
+    const spec = ReaderLayoutSpec(
+      width: 180,
+      height: 300,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+      textAlignment: ReaderTextAlignment.justified,
+    );
+
+    final painter = ReaderPaginator.createPainter(
+      text: text,
+      kind: ReaderBlockKind.paragraph,
+      spec: spec,
+    )..layout(maxWidth: spec.width);
+
+    expect(painter.debugDisplayText, contains('\u00ad'));
+    expect(painter.debugBrokenHyphenBoxes, isNotEmpty);
+    final wordStart = text.indexOf('carrying');
+    expect(
+      painter.getWordBoundary(TextPosition(offset: wordStart + 5)),
+      TextRange(start: wordStart, end: wordStart + 'carrying'.length),
+    );
+    painter.dispose();
   });
 }

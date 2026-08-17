@@ -46,9 +46,11 @@ export class MockTranslationProvider implements TranslationProvider {
     request: TextAssistanceRequest,
   ): Promise<TextExplanationResult> {
     return {
-      summary: `Значение: ${request.source}`,
-      meaningInContext: 'Демонстрационное объяснение в контексте.',
-      breakdown: 'Разбор конструкции локальным провайдером.',
+      focusType: 'grammar',
+      focusText: request.source,
+      title: 'Грамматическая конструкция',
+      explanation: 'Демонстрационное объяснение конструкции в контексте.',
+      structure: 'форма + контекст',
       literalTranslation: '',
       naturalTranslation: `Перевод фрагмента: ${request.source}`,
       examples: [],

@@ -23,6 +23,13 @@ final class ReaderWordHit {
   final ReaderInlineSpan? link;
 }
 
+final class ReaderSelectionHit {
+  const ReaderSelectionHit({required this.selection, required this.rect});
+
+  final ReaderTextSelection selection;
+  final Rect rect;
+}
+
 final class ReaderPageSurface extends StatefulWidget {
   const ReaderPageSurface({
     required this.page,
@@ -49,12 +56,12 @@ final class ReaderPageSurface extends StatefulWidget {
   final ReaderLayoutSpec spec;
   final ValueChanged<ReaderWordHit> onWordTap;
   final ValueChanged<Offset> onBlankTap;
-  final ValueChanged<ReaderTextSelection>? onTextSelected;
+  final ValueChanged<ReaderSelectionHit>? onTextSelected;
   final ValueChanged<ReaderInlineSpan>? onLinkTap;
   final ReaderTextRange? activeSelection;
   final bool selectionIsControlled;
   final ValueChanged<ReaderTextRange?>? onSelectionChanged;
-  final VoidCallback? onSelectionReady;
+  final ValueChanged<ReaderSelectionHit>? onSelectionReady;
   final ValueChanged<int>? onSelectionEdgeRequested;
   final bool selectionHandlesVisible;
   final ReaderTextRange? focusedRange;
@@ -139,7 +146,7 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
           },
           onLongPressEnd: (_) {
             _anchorWord = null;
-            widget.onSelectionReady?.call();
+            _notifySelectionReady(painter);
           },
           child: CustomPaint(painter: painter, size: Size.infinite),
         ),
@@ -188,7 +195,7 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
               behavior: HitTestBehavior.opaque,
               onPanUpdate: (DragUpdateDetails details) =>
                   _moveHandle(handle.isStart, details.globalPosition, painter),
-              onPanEnd: (_) => widget.onSelectionReady?.call(),
+              onPanEnd: (_) => _notifySelectionReady(painter),
               child: _SelectionHandle(
                 color: widget.selectionColor.withAlpha(255),
               ),
@@ -205,12 +212,10 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
       if (hit != null &&
           hit.startOffset < selection.endOffset &&
           hit.endOffset > selection.startOffset) {
-        widget.onTextSelected?.call(
-          ReaderTextSelection(
-            startOffset: selection.startOffset,
-            endOffset: selection.endOffset,
-          ),
-        );
+        final hit = painter.selectionHit(selection);
+        if (hit != null) {
+          widget.onTextSelected?.call(hit);
+        }
         return;
       }
       _setSelection(null);
@@ -223,6 +228,17 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
       widget.onLinkTap?.call(link);
     } else {
       widget.onWordTap(hit);
+    }
+  }
+
+  void _notifySelectionReady(_ReaderPagePainter painter) {
+    final selection = _effectiveSelection;
+    if (selection == null) {
+      return;
+    }
+    final hit = painter.selectionHit(selection);
+    if (hit != null) {
+      widget.onSelectionReady?.call(hit);
     }
   }
 
@@ -258,9 +274,10 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
   }
 
   void _requestAdjacentPageIfNeeded(double dx) {
-    final direction = dx < 18
+    const deliberateOvershoot = 24.0;
+    final direction = dx < -deliberateOvershoot
         ? -1
-        : dx > context.size!.width - 18
+        : dx > context.size!.width + deliberateOvershoot
         ? 1
         : 0;
     if (direction == 0 || widget.onSelectionEdgeRequested == null) {
@@ -389,7 +406,7 @@ final class _ReaderPagePainter extends CustomPainter {
         spec: spec,
       )..layout(maxWidth: spec.width);
       if (focusedRange case final range?) {
-        _paintHighlight(
+        _paintFocusedHighlight(
           canvas,
           painter,
           segment,
@@ -556,9 +573,56 @@ final class _ReaderPagePainter extends CustomPainter {
     return result;
   }
 
+  ReaderSelectionHit? selectionHit(ReaderTextRange range) {
+    Rect? bounds;
+    for (final segment in page.segments) {
+      if (segment.kind == ReaderBlockKind.image ||
+          range.endOffset <= segment.globalStart ||
+          range.startOffset >= segment.globalEnd) {
+        continue;
+      }
+      final prefix = segment.indentFirstLine
+          ? ReaderPaginator.paragraphIndent
+          : '';
+      final painter = ReaderPaginator.createPainter(
+        text: segment.text,
+        prefix: prefix,
+        inlineSpans: segment.inlineSpans,
+        kind: segment.kind,
+        spec: spec,
+      )..layout(maxWidth: spec.width);
+      final localStart =
+          math.max(range.startOffset, segment.globalStart) -
+          segment.globalStart +
+          prefix.length;
+      final localEnd =
+          math.min(range.endOffset, segment.globalEnd) -
+          segment.globalStart +
+          prefix.length;
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: localStart, extentOffset: localEnd),
+      );
+      for (final box in boxes) {
+        final rect = box.toRect().shift(Offset(0, segment.top));
+        bounds = bounds == null ? rect : bounds.expandToInclude(rect);
+      }
+      painter.dispose();
+    }
+    if (bounds == null) {
+      return null;
+    }
+    return ReaderSelectionHit(
+      selection: ReaderTextSelection(
+        startOffset: range.startOffset,
+        endOffset: range.endOffset,
+      ),
+      rect: bounds,
+    );
+  }
+
   void _paintHighlight(
     Canvas canvas,
-    TextPainter painter,
+    ReaderTextPainter painter,
     ReaderPageSegment segment,
     int prefixLength,
     ReaderTextRange range,
@@ -575,9 +639,43 @@ final class _ReaderPagePainter extends CustomPainter {
     }
   }
 
+  void _paintFocusedHighlight(
+    Canvas canvas,
+    ReaderTextPainter painter,
+    ReaderPageSegment segment,
+    int prefixLength,
+    ReaderTextRange range,
+    Color color,
+  ) {
+    final boxes = _boxesForRange(painter, segment, prefixLength, range);
+    final markerPaint = Paint()..color = color;
+    final underlinePaint = Paint()
+      ..color = color.withValues(alpha: 0.62)
+      ..strokeWidth = 1.15
+      ..strokeCap = StrokeCap.round;
+    for (final box in boxes) {
+      final rect = box.toRect().shift(Offset(0, segment.top));
+      final marker = Rect.fromLTRB(
+        rect.left - 0.5,
+        rect.bottom - math.max(4, spec.fontSize * 0.22),
+        rect.right + 0.5,
+        rect.bottom + 0.5,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(marker, const Radius.circular(2)),
+        markerPaint,
+      );
+      canvas.drawLine(
+        Offset(rect.left, rect.bottom + 0.8),
+        Offset(rect.right, rect.bottom + 0.8),
+        underlinePaint,
+      );
+    }
+  }
+
   void _paintSavedUnderline(
     Canvas canvas,
-    TextPainter painter,
+    ReaderTextPainter painter,
     ReaderPageSegment segment,
     int prefixLength,
     ReaderTextRange range,
@@ -594,7 +692,7 @@ final class _ReaderPagePainter extends CustomPainter {
   }
 
   List<TextBox> _boxesForRange(
-    TextPainter painter,
+    ReaderTextPainter painter,
     ReaderPageSegment segment,
     int prefixLength,
     ReaderTextRange range,

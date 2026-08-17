@@ -41,7 +41,9 @@
   "margins": "Поля",
   "readerBrightness": "Яркость",
   "pageAnimation": "Анимация перелистывания",
+  "assistanceLanguage": "Язык объяснений",
   "bookLanguage": "Язык книги",
+  "russianLanguage": "Русский",
   "englishLanguage": "Английский",
   "greekLanguage": "Греческий",
   "theme": "Тема",
@@ -60,6 +62,7 @@
   "translationUnavailable": "Не удалось получить перевод.",
   "translationInvalid": "Сервис вернул некорректный ответ.",
   "saveWord": "Сохранить слово",
+  "saveAction": "Сохранить",
   "wordSaved": "Слово сохранено",
   "removeFromDictionary": "Удалить из словаря",
   "savedVocabularyStatus": "Уже в словаре · {status}",
@@ -75,9 +78,11 @@
   "fragmentTranslationTitle": "Перевод",
   "explainText": "Объяснить",
   "explanationTitle": "Объяснение",
-  "explanationSummaryLabel": "Коротко",
-  "explanationMeaningLabel": "В этом контексте",
-  "explanationBreakdownLabel": "Как устроено",
+  "explanationGrammarLabel": "Грамматика",
+  "explanationPhrasalVerbLabel": "Фразовый глагол",
+  "explanationIdiomLabel": "Идиома",
+  "explanationFocusLabel": "Объясняем",
+  "explanationStructureLabel": "Схема",
   "explanationLiteralLabel": "Дословно",
   "explanationNaturalLabel": "Естественный перевод",
   "explanationExamplesLabel": "Примеры",
@@ -113,7 +118,7 @@
       "chapterCount": {"type": "int"}
     }
   },
-  "readerCompactProgress": "{page} из {pageCount} · {percent}%",
+  "readerCompactProgress": "Стр. {page} из {pageCount} · {percent}%",
   "@readerCompactProgress": {
     "placeholders": {
       "page": {"type": "int"},

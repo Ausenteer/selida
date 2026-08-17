@@ -9,7 +9,6 @@ import 'package:selida/app/selida_theme.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/core/database/database_provider.dart';
 import 'package:selida/features/reader/application/reader_paginator.dart';
-import 'package:selida/features/reader/domain/reader_preferences.dart';
 import 'package:selida/features/reader/presentation/reader_page_surface.dart';
 import 'package:selida/features/reader/presentation/reader_screen.dart';
 import 'package:selida/features/translation/application/translation_service.dart';
@@ -91,8 +90,10 @@ void main() {
     await _pumpFrames(tester);
 
     expect(find.text('ходить'), findsOneWidget);
+    expect(find.text('walked'), findsOneWidget);
     expect(find.text('Sentence'), findsOneWidget);
-    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Explain'), findsOneWidget);
     final surfaceSize = tester.getSize(surface);
     await tester.tapAt(
       origin + Offset(surfaceSize.width / 2, surfaceSize.height - 20),
@@ -129,7 +130,9 @@ void main() {
       isA<DateTime>(),
     );
 
-    await tester.tap(find.byIcon(Icons.subject_rounded));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('translate-word-sentence-action')),
+    );
     await _pumpFrames(tester);
     expect(find.text('She walked home.'), findsOneWidget);
     expect(find.text('Она пошла домой.'), findsOneWidget);
@@ -202,17 +205,18 @@ void main() {
     await gesture.up();
     await _pumpFrames(tester);
 
-    await tester.tap(find.text('Translate'));
-    await _pumpFrames(tester);
-
+    expect(
+      find.byKey(const ValueKey<String>('phrase-translation-popover')),
+      findsOneWidget,
+    );
     expect(find.text('пошла домой'), findsOneWidget);
-    await tester.tap(find.text('Save phrase'));
+    expect(find.text('Sentence'), findsOneWidget);
+    expect(find.text('Explain'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('save-popover-action')));
     await _pumpFrames(tester);
     final phrases = await database.select(database.vocabularyItems).get();
     expect(phrases.single.kind, 'phrase');
     expect(phrases.single.lemma, 'walked home');
-    await tester.ensureVisible(find.text('Explain'));
-    await tester.pump();
     await tester.tap(find.text('Explain'));
     await _pumpFrames(tester);
     await tester.drag(find.byType(ListView).last, const Offset(0, -300));
@@ -237,6 +241,7 @@ void main() {
       ProviderScope(
         overrides: [
           databaseProvider.overrideWithValue(database),
+          translationServiceProvider.overrideWithValue(const _FakeTranslator()),
           textAssistantProvider.overrideWithValue(const _FakeTextAssistant()),
         ],
         child: MaterialApp(
@@ -254,51 +259,34 @@ void main() {
     await tester.longPressAt(origin + const Offset(95, 20));
     await _pumpFrames(tester);
     expect(
-      find.byKey(const ValueKey<String>('selection-start-handle')),
+      find.byKey(const ValueKey<String>('word-translation-popover')),
       findsOneWidget,
     );
-
-    await tester.tap(find.text('Translate'));
-    await _pumpFrames(tester);
-
     expect(find.text('walked'), findsOneWidget);
-    expect(find.text('пошла'), findsOneWidget);
-    expect(find.text('Save word'), findsOneWidget);
+    expect(find.text('ходить'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
     expect(find.text('Save phrase'), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('selection-start-handle')),
       findsNothing,
     );
 
-    final explainAction = find.byKey(
-      const ValueKey<String>('explain-selection-action'),
-    );
-    OutlinedButton explainButton() => tester.widget<OutlinedButton>(
-      find.descendant(of: explainAction, matching: find.byType(OutlinedButton)),
-    );
-    expect(explainButton().onPressed != null, isTrue);
     await tester.tap(find.text('Explain'));
     await _pumpFrames(tester);
-    expect(explainButton().onPressed != null, isTrue);
-    expect(
-      explainButton().style?.backgroundColor?.resolve(<WidgetState>{}),
-      SelidaColors.forest,
-    );
     expect(
       find.text('Past tense describes a completed action.'),
       findsOneWidget,
     );
-
-    await tester.tap(find.text('Save word'));
-    await _pumpFrames(tester);
-    final words = await database.select(database.vocabularyItems).get();
-    expect(words.single.kind, 'word');
-    expect(words.single.partOfSpeech == null, isTrue);
-    expect(find.text('Saved'), findsOneWidget);
-
-    await tester.tap(find.text('Saved'));
-    await _pumpFrames(tester);
-    expect(await database.select(database.wordOccurrences).get(), isEmpty);
+    expect(find.text('Grammar'), findsOneWidget);
+    final focusText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('explanation-focus-text')),
+    );
+    expect(focusText.data, 'walked');
+    expect(find.text('Past Simple'), findsOneWidget);
+    expect(find.text('verb + -ed'), findsOneWidget);
+    expect(find.text('Literally'), findsNothing);
+    expect(find.text('Examples'), findsNothing);
+    expect(find.text('Common mistake'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -339,7 +327,7 @@ void main() {
     expect(tester.getRect(bottomProgress).top, greaterThan(surfaceRect.bottom));
     expect(tester.getSize(topChrome).height, 44);
     expect(tester.getSize(bottomProgress).height, 36);
-    expect(find.text('1 of 1 · 0%'), findsOneWidget);
+    expect(find.text('Page 1 of 1 · 0%'), findsOneWidget);
     expect(find.text('Aa'), findsOneWidget);
     expect(find.textContaining('min left'), findsNothing);
 
@@ -353,7 +341,7 @@ void main() {
       find.byKey(const ValueKey<String>('word-translation-popover')),
       findsOneWidget,
     );
-    await tester.tap(find.text('Example'));
+    await tester.tap(find.textContaining('One · 1/2'));
     await _pumpFrames(tester);
     expect(
       find.byKey(const ValueKey<String>('word-translation-popover')),
@@ -367,20 +355,6 @@ void main() {
     await tester.tap(find.byIcon(Icons.history_rounded));
     await _pumpFrames(tester);
     expect(find.textContaining('One · 1/2'), findsOneWidget);
-
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(ReaderScreen)),
-    );
-    final scaffold = find.byType(Scaffold).first;
-    final scaffoldOrigin = tester.getTopLeft(scaffold);
-    final scaffoldSize = tester.getSize(scaffold);
-    final brightnessGesture = await tester.startGesture(
-      scaffoldOrigin + Offset(scaffoldSize.width - 5, scaffoldSize.height / 2),
-    );
-    await brightnessGesture.moveBy(const Offset(0, 90));
-    await tester.pump();
-    await brightnessGesture.up();
-    expect(container.read(readerPreferencesProvider).brightness, lessThan(1));
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -570,6 +544,7 @@ final class _FakeTranslator implements WordTranslator {
 
   @override
   Future<WordTranslation> translateWord(WordTranslationRequest request) async {
+    expect(request.interfaceLanguage, 'ru');
     return const WordTranslation(
       translation: 'ходить',
       lemma: 'walk',
@@ -608,6 +583,7 @@ final class _FakeTextAssistant implements TextAssistant {
   Future<FragmentTranslation> translateFragment(
     TextAssistanceRequest request,
   ) async {
+    expect(request.interfaceLanguage, 'ru');
     return FragmentTranslation(
       translation: switch (request.source) {
         'walked' => 'пошла',
@@ -620,14 +596,19 @@ final class _FakeTextAssistant implements TextAssistant {
 
   @override
   Future<TextExplanation> explainText(TextAssistanceRequest request) async {
+    expect(request.interfaceLanguage, 'ru');
     return const TextExplanation(
-      summary: 'A completed action in the past.',
-      meaningInContext: 'Past tense describes a completed action.',
-      breakdown: 'The verb carries the past-tense form.',
-      literalTranslation: '',
+      focus: TextExplanationFocus.grammar,
+      focusText: 'walked',
+      title: 'Past Simple',
+      explanation: 'Past tense describes a completed action.',
+      structure: 'verb + -ed',
+      literalTranslation: 'шла',
       naturalTranslation: 'пошла',
-      examples: <TextExplanationExample>[],
-      commonMistake: '',
+      examples: <TextExplanationExample>[
+        TextExplanationExample(source: 'I walked.', translation: 'Я шёл.'),
+      ],
+      commonMistake: 'Do not use -ed with irregular verbs.',
       fromCache: false,
     );
   }

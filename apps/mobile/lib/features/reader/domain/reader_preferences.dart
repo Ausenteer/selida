@@ -9,6 +9,8 @@ import 'package:selida/features/reader/domain/reader_page.dart';
 
 enum ReaderTheme { light, sepia, dark }
 
+enum ReaderAssistanceLanguage { russian, english }
+
 @immutable
 final class ReaderPreferences {
   const ReaderPreferences({
@@ -19,8 +21,9 @@ final class ReaderPreferences {
     this.pageAnimationEnabled = true,
     this.theme = ReaderTheme.light,
     this.paragraphStyle = ReaderParagraphStyle.book,
-    this.textAlignment = ReaderTextAlignment.left,
+    this.textAlignment = ReaderTextAlignment.justified,
     this.fontFamily = ReaderFontFamily.literata,
+    this.assistanceLanguage = ReaderAssistanceLanguage.russian,
   });
 
   final double fontSize;
@@ -32,6 +35,7 @@ final class ReaderPreferences {
   final ReaderParagraphStyle paragraphStyle;
   final ReaderTextAlignment textAlignment;
   final ReaderFontFamily fontFamily;
+  final ReaderAssistanceLanguage assistanceLanguage;
 
   ReaderPreferences copyWith({
     double? fontSize,
@@ -43,6 +47,7 @@ final class ReaderPreferences {
     ReaderParagraphStyle? paragraphStyle,
     ReaderTextAlignment? textAlignment,
     ReaderFontFamily? fontFamily,
+    ReaderAssistanceLanguage? assistanceLanguage,
   }) {
     return ReaderPreferences(
       fontSize: fontSize ?? this.fontSize,
@@ -54,6 +59,7 @@ final class ReaderPreferences {
       paragraphStyle: paragraphStyle ?? this.paragraphStyle,
       textAlignment: textAlignment ?? this.textAlignment,
       fontFamily: fontFamily ?? this.fontFamily,
+      assistanceLanguage: assistanceLanguage ?? this.assistanceLanguage,
     );
   }
 }
@@ -66,6 +72,7 @@ readerPreferencesProvider =
 
 final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
   static const _storageKey = 'reader.preferences';
+  static const _schemaVersion = 3;
 
   late AppDatabase _database;
   var _revision = 0;
@@ -113,6 +120,10 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
     _set(state.copyWith(fontFamily: value));
   }
 
+  void setAssistanceLanguage(ReaderAssistanceLanguage value) {
+    _set(state.copyWith(assistanceLanguage: value));
+  }
+
   void _set(ReaderPreferences value) {
     _revision += 1;
     state = value;
@@ -126,6 +137,9 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
     }
     try {
       final json = jsonDecode(stored) as Map<String, Object?>;
+      final schemaVersion = json['schemaVersion'] is num
+          ? (json['schemaVersion']! as num).toInt()
+          : 1;
       final themeName = json['theme'] as String?;
       final theme = ReaderTheme.values
           .where((ReaderTheme value) => value.name == themeName)
@@ -144,19 +158,35 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
       final fontFamily = ReaderFontFamily.values
           .where((ReaderFontFamily value) => value.name == fontFamilyName)
           .firstOrNull;
+      final assistanceLanguageName = json['assistanceLanguage'] as String?;
+      final assistanceLanguage = ReaderAssistanceLanguage.values
+          .where(
+            (ReaderAssistanceLanguage value) =>
+                value.name == assistanceLanguageName,
+          )
+          .firstOrNull;
       state = ReaderPreferences(
         fontSize: _numberInRange(json['fontSize'], 15, 24, 18),
         lineHeight: _numberInRange(json['lineHeight'], 1.3, 1.8, 1.55),
         horizontalMargin: _numberInRange(json['horizontalMargin'], 16, 36, 24),
-        brightness: _numberInRange(json['brightness'], 0.25, 1, 1),
+        brightness: schemaVersion < 3
+            ? 1
+            : _numberInRange(json['brightness'], 0.25, 1, 1),
         pageAnimationEnabled: json['pageAnimationEnabled'] is bool
             ? json['pageAnimationEnabled']! as bool
             : true,
         theme: theme ?? ReaderTheme.light,
         paragraphStyle: paragraphStyle ?? ReaderParagraphStyle.book,
-        textAlignment: textAlignment ?? ReaderTextAlignment.left,
+        textAlignment: schemaVersion < _schemaVersion
+            ? ReaderTextAlignment.justified
+            : textAlignment ?? ReaderTextAlignment.justified,
         fontFamily: fontFamily ?? ReaderFontFamily.literata,
+        assistanceLanguage:
+            assistanceLanguage ?? ReaderAssistanceLanguage.russian,
       );
+      if (schemaVersion < _schemaVersion) {
+        unawaited(_persist(state));
+      }
     } on FormatException {
       return;
     } on TypeError {
@@ -168,6 +198,7 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
     return _database.saveLocalSettingValue(
       key: _storageKey,
       valueJson: jsonEncode(<String, Object>{
+        'schemaVersion': _schemaVersion,
         'fontSize': value.fontSize,
         'lineHeight': value.lineHeight,
         'horizontalMargin': value.horizontalMargin,
@@ -177,6 +208,7 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
         'paragraphStyle': value.paragraphStyle.name,
         'textAlignment': value.textAlignment.name,
         'fontFamily': value.fontFamily.name,
+        'assistanceLanguage': value.assistanceLanguage.name,
       }),
     );
   }
