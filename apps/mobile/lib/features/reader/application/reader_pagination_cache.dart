@@ -40,7 +40,7 @@ final class ReaderPaginationCache {
       'algorithmVersion': ReaderPaginator.layoutAlgorithmVersion,
       'width': spec.width,
       'height': spec.height,
-      'fontFamily': 'Literata',
+      'fontFamily': ReaderPaginator.fontFamilyFor(spec.fontFamily),
       'fontMetricsVersion': 1,
       'fontSize': spec.fontSize,
       'lineHeight': spec.lineHeight,
@@ -51,6 +51,7 @@ final class ReaderPaginationCache {
         spec.paragraphStyle,
       ),
       'paragraphIndent': ReaderPaginator.paragraphIndent,
+      'textAlignment': spec.textAlignment.name,
     };
     final settingsJson = jsonEncode(settings);
     return ReaderPaginationIdentity(

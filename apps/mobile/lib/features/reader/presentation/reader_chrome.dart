@@ -14,6 +14,7 @@ final class _ReaderChrome extends StatelessWidget {
     required this.onBack,
     required this.onReturnToPreviousLocation,
     required this.onContents,
+    required this.onSearch,
     required this.onSettings,
     required this.onProgressChanged,
     required this.chapterForProgress,
@@ -31,6 +32,7 @@ final class _ReaderChrome extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onReturnToPreviousLocation;
   final VoidCallback onContents;
+  final VoidCallback onSearch;
   final VoidCallback onSettings;
   final ValueChanged<double> onProgressChanged;
   final int Function(double progress) chapterForProgress;
@@ -137,22 +139,32 @@ final class _ReaderChrome extends StatelessWidget {
                     ),
                     SizedBox(
                       width: 88,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: _ChromeButton(
-                          tooltip: strings.readerSettings,
-                          onTap: onSettings,
-                          child: Text(
-                            'Aa',
-                            style: TextStyle(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: <Widget>[
+                          _ChromeButton(
+                            tooltip: strings.searchInBook,
+                            onTap: onSearch,
+                            child: Icon(
+                              Icons.search_rounded,
                               color: palette.text,
-                              fontFamily: 'Literata',
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              height: 1,
                             ),
                           ),
-                        ),
+                          _ChromeButton(
+                            tooltip: strings.readerSettings,
+                            onTap: onSettings,
+                            child: Text(
+                              'Aa',
+                              style: TextStyle(
+                                color: palette.text,
+                                fontFamily: 'Literata',
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

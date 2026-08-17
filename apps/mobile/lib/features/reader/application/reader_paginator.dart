@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter/painting.dart';
 import 'package:selida/features/reader/domain/reader_page.dart';
 
@@ -10,7 +11,10 @@ final class ReaderLayoutSpec {
     required this.lineHeight,
     required this.locale,
     required this.textColor,
+    this.linkColor,
     this.paragraphStyle = ReaderParagraphStyle.book,
+    this.textAlignment = ReaderTextAlignment.left,
+    this.fontFamily = ReaderFontFamily.literata,
   });
 
   final double width;
@@ -19,17 +23,31 @@ final class ReaderLayoutSpec {
   final double lineHeight;
   final Locale locale;
   final Color textColor;
+  final Color? linkColor;
   final ReaderParagraphStyle paragraphStyle;
+  final ReaderTextAlignment textAlignment;
+  final ReaderFontFamily fontFamily;
 }
 
 abstract final class ReaderPaginator {
-  static const int layoutAlgorithmVersion = 2;
+  static const int layoutAlgorithmVersion = 4;
   static const String paragraphIndent = '\u2003';
 
   static double paragraphSpacingFor(ReaderParagraphStyle style) {
     return switch (style) {
       ReaderParagraphStyle.book => 4,
       ReaderParagraphStyle.modern => 14,
+    };
+  }
+
+  static double imageHeightFor(ReaderLayoutSpec spec) {
+    return math.min(240, math.max(120, spec.height * 0.42));
+  }
+
+  static String fontFamilyFor(ReaderFontFamily family) {
+    return switch (family) {
+      ReaderFontFamily.literata => 'Literata',
+      ReaderFontFamily.inter => 'Inter',
     };
   }
 
@@ -87,7 +105,7 @@ abstract final class ReaderPaginator {
         return null;
       }
       if (segments.isNotEmpty && localStart == 0) {
-        usedHeight += paragraphSpacingFor(spec.paragraphStyle);
+        usedHeight += _spacingBefore(block.kind, spec.paragraphStyle);
       }
       final shouldIndent = _shouldIndent(
         blocks: blocks,
@@ -95,15 +113,26 @@ abstract final class ReaderPaginator {
         localOffset: localStart,
         style: spec.paragraphStyle,
       );
-      final prefix = shouldIndent ? paragraphIndent : '';
       final text = block.text.substring(localStart, localEnd);
-      final painter = _createPainter(
-        text: '$prefix$text',
-        kind: block.kind,
-        spec: spec,
-      )..layout(maxWidth: spec.width);
-      final height = painter.height;
-      painter.dispose();
+      final inlineSpans = _sliceInlineSpans(
+        block.inlineSpans,
+        localStart,
+        localEnd,
+      );
+      late final double height;
+      if (block.kind == ReaderBlockKind.image) {
+        height = imageHeightFor(spec);
+      } else {
+        final painter = createPainter(
+          text: text,
+          prefix: shouldIndent ? paragraphIndent : '',
+          inlineSpans: inlineSpans,
+          kind: block.kind,
+          spec: spec,
+        )..layout(maxWidth: spec.width);
+        height = painter.height;
+        painter.dispose();
+      }
       segments.add(
         ReaderPageSegment(
           kind: block.kind,
@@ -113,6 +142,9 @@ abstract final class ReaderPaginator {
           indentFirstLine: shouldIndent,
           top: usedHeight,
           height: height,
+          inlineSpans: inlineSpans,
+          resourcePath: block.resourcePath,
+          altText: block.altText,
         ),
       );
       usedHeight += height;
@@ -131,44 +163,51 @@ abstract final class ReaderPaginator {
     required String text,
     required ReaderBlockKind kind,
     required ReaderLayoutSpec spec,
-    int? maxLines,
-  }) {
-    return _createPainter(
-      text: text,
-      kind: kind,
-      spec: spec,
-      maxLines: maxLines,
-    );
-  }
-
-  static TextPainter _createPainter({
-    required String text,
-    required ReaderBlockKind kind,
-    required ReaderLayoutSpec spec,
+    String prefix = '',
+    List<ReaderInlineSpan> inlineSpans = const <ReaderInlineSpan>[],
     int? maxLines,
   }) {
     final isHeading = kind == ReaderBlockKind.heading;
     final isQuote = kind == ReaderBlockKind.quote;
-    return TextPainter(
-      text: TextSpan(
+    final isSeparator = kind == ReaderBlockKind.separator;
+    final baseStyle = TextStyle(
+      color: spec.textColor,
+      fontFamily: fontFamilyFor(spec.fontFamily),
+      fontSize: isHeading
+          ? spec.fontSize * 1.16
+          : isSeparator
+          ? spec.fontSize * 0.9
+          : spec.fontSize,
+      fontWeight: isHeading ? FontWeight.w600 : FontWeight.w400,
+      fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
+      height: spec.lineHeight,
+      letterSpacing: 0.05,
+    );
+    final children = <InlineSpan>[
+      if (prefix.isNotEmpty) TextSpan(text: prefix),
+      ..._styledTextSpans(
         text: text,
-        style: TextStyle(
-          color: spec.textColor,
-          fontFamily: 'Literata',
-          fontSize: isHeading ? spec.fontSize * 1.16 : spec.fontSize,
-          fontWeight: isHeading ? FontWeight.w600 : FontWeight.w400,
-          fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
-          height: spec.lineHeight,
-          letterSpacing: 0.05,
-        ),
+        inlineSpans: inlineSpans,
+        linkColor: spec.linkColor ?? spec.textColor,
       ),
+    ];
+    final canJustify =
+        kind == ReaderBlockKind.paragraph ||
+        kind == ReaderBlockKind.quote ||
+        kind == ReaderBlockKind.listItem;
+    return TextPainter(
+      text: TextSpan(style: baseStyle, children: children),
       textDirection: TextDirection.ltr,
-      textAlign: TextAlign.left,
+      textAlign: isSeparator
+          ? TextAlign.center
+          : spec.textAlignment == ReaderTextAlignment.justified && canJustify
+          ? TextAlign.justify
+          : TextAlign.left,
       locale: spec.locale,
       maxLines: maxLines,
       textScaler: TextScaler.noScaling,
       strutStyle: StrutStyle(
-        fontFamily: 'Literata',
+        fontFamily: fontFamilyFor(spec.fontFamily),
         fontSize: isHeading ? spec.fontSize * 1.16 : spec.fontSize,
         height: spec.lineHeight,
         forceStrutHeight: false,
@@ -176,11 +215,75 @@ abstract final class ReaderPaginator {
     );
   }
 
+  static List<InlineSpan> _styledTextSpans({
+    required String text,
+    required List<ReaderInlineSpan> inlineSpans,
+    required Color linkColor,
+  }) {
+    if (inlineSpans.isEmpty) {
+      return <InlineSpan>[TextSpan(text: text)];
+    }
+    final result = <InlineSpan>[];
+    var cursor = 0;
+    for (final span in inlineSpans) {
+      final start = span.startOffset.clamp(cursor, text.length);
+      final end = span.endOffset.clamp(start, text.length);
+      if (start > cursor) {
+        result.add(TextSpan(text: text.substring(cursor, start)));
+      }
+      if (end > start) {
+        result.add(
+          TextSpan(
+            text: text.substring(start, end),
+            style: TextStyle(
+              color: span.href == null ? null : linkColor,
+              fontWeight: span.bold ? FontWeight.w700 : null,
+              fontStyle: span.italic ? FontStyle.italic : null,
+              decoration: span.underline || span.href != null
+                  ? TextDecoration.underline
+                  : null,
+              decorationStyle: span.isFootnote
+                  ? TextDecorationStyle.dotted
+                  : null,
+            ),
+          ),
+        );
+      }
+      cursor = end;
+    }
+    if (cursor < text.length) {
+      result.add(TextSpan(text: text.substring(cursor)));
+    }
+    return result;
+  }
+
+  static List<ReaderInlineSpan> _sliceInlineSpans(
+    List<ReaderInlineSpan> spans,
+    int start,
+    int end,
+  ) {
+    return List<ReaderInlineSpan>.unmodifiable(<ReaderInlineSpan>[
+      for (final span in spans) ?span.slice(start, end),
+    ]);
+  }
+
   static int _firstCharacterLength(String value) {
     if (value.isEmpty) {
       return 0;
     }
     return value.runes.first > 0xffff ? 2 : 1;
+  }
+
+  static double _spacingBefore(
+    ReaderBlockKind kind,
+    ReaderParagraphStyle style,
+  ) {
+    return switch (kind) {
+      ReaderBlockKind.heading => 18,
+      ReaderBlockKind.separator => 14,
+      ReaderBlockKind.image => 16,
+      _ => paragraphSpacingFor(style),
+    };
   }
 
   static bool _shouldIndent({
@@ -235,13 +338,44 @@ final class ReaderPaginationCursor {
       }
 
       if (_localOffset == 0 && pageSegments.isNotEmpty) {
-        final minimumLine = spec.fontSize * spec.lineHeight;
-        if (spec.height - usedHeight <
-            ReaderPaginator.paragraphSpacingFor(spec.paragraphStyle) +
-                minimumLine) {
+        final spacing = ReaderPaginator._spacingBefore(
+          block.kind,
+          spec.paragraphStyle,
+        );
+        final minimumHeight = block.kind == ReaderBlockKind.image
+            ? ReaderPaginator.imageHeightFor(spec)
+            : spec.fontSize * spec.lineHeight;
+        if (spec.height - usedHeight < spacing + minimumHeight) {
           return finishPage();
         }
-        usedHeight += ReaderPaginator.paragraphSpacingFor(spec.paragraphStyle);
+        usedHeight += spacing;
+      }
+
+      if (block.kind == ReaderBlockKind.image) {
+        final imageHeight = math.min(
+          ReaderPaginator.imageHeightFor(spec),
+          spec.height - usedHeight,
+        );
+        pageSegments.add(
+          ReaderPageSegment(
+            kind: block.kind,
+            text: block.text,
+            globalStart: block.startOffset,
+            globalEnd: block.endOffset,
+            indentFirstLine: false,
+            top: usedHeight,
+            height: imageHeight,
+            resourcePath: block.resourcePath,
+            altText: block.altText,
+          ),
+        );
+        usedHeight += imageHeight;
+        _blockIndex += 1;
+        _localOffset = 0;
+        if (_blockIndex < blocks.length) {
+          return finishPage();
+        }
+        continue;
       }
 
       final remaining = block.text.substring(_localOffset);
@@ -253,22 +387,38 @@ final class ReaderPaginationCursor {
       );
       final prefix = shouldIndent ? ReaderPaginator.paragraphIndent : '';
       final availableHeight = math.max(0, spec.height - usedHeight);
-      final fullPainter = ReaderPaginator._createPainter(
-        text: '$prefix$remaining',
+      final remainingSpans = ReaderPaginator._sliceInlineSpans(
+        block.inlineSpans,
+        _localOffset,
+        block.text.length,
+      );
+      final fullPainter = ReaderPaginator.createPainter(
+        text: remaining,
+        prefix: prefix,
+        inlineSpans: remainingSpans,
         kind: block.kind,
         spec: spec,
       )..layout(maxWidth: spec.width);
 
       var consumed = remaining.length;
       if (fullPainter.height > availableHeight) {
+        final totalLineCount = fullPainter.computeLineMetrics().length;
         fullPainter.dispose();
         final approximateLineHeight = spec.fontSize * spec.lineHeight;
-        final maxLines = math.max(
+        var maxLines = math.max(
           1,
           (availableHeight / approximateLineHeight).floor(),
         );
-        final clippedPainter = ReaderPaginator._createPainter(
-          text: '$prefix$remaining',
+        if (totalLineCount - maxLines == 1 && maxLines > 2) {
+          maxLines -= 1;
+        }
+        if (maxLines < 2 && pageSegments.isNotEmpty) {
+          return finishPage();
+        }
+        final clippedPainter = ReaderPaginator.createPainter(
+          text: remaining,
+          prefix: prefix,
+          inlineSpans: remainingSpans,
           kind: block.kind,
           spec: spec,
           maxLines: maxLines,
@@ -287,8 +437,15 @@ final class ReaderPaginationCursor {
       }
 
       final segmentText = remaining.substring(0, consumed);
-      final segmentPainter = ReaderPaginator._createPainter(
-        text: '$prefix$segmentText',
+      final segmentSpans = ReaderPaginator._sliceInlineSpans(
+        block.inlineSpans,
+        _localOffset,
+        _localOffset + consumed,
+      );
+      final segmentPainter = ReaderPaginator.createPainter(
+        text: segmentText,
+        prefix: prefix,
+        inlineSpans: segmentSpans,
         kind: block.kind,
         spec: spec,
       )..layout(maxWidth: spec.width);
@@ -303,6 +460,9 @@ final class ReaderPaginationCursor {
           indentFirstLine: shouldIndent,
           top: usedHeight,
           height: segmentHeight,
+          inlineSpans: segmentSpans,
+          resourcePath: block.resourcePath,
+          altText: block.altText,
         ),
       );
       usedHeight += segmentHeight;
@@ -310,10 +470,9 @@ final class ReaderPaginationCursor {
 
       if (_localOffset < block.text.length) {
         return finishPage();
-      } else {
-        _blockIndex += 1;
-        _localOffset = 0;
       }
+      _blockIndex += 1;
+      _localOffset = 0;
     }
     return pageSegments.isEmpty ? null : finishPage();
   }

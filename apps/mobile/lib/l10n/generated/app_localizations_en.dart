@@ -74,6 +74,45 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modernParagraphStyle => 'Modern';
 
   @override
+  String get textAlignment => 'Alignment';
+
+  @override
+  String get readerFont => 'Font';
+
+  @override
+  String get fontLiterata => 'Literata';
+
+  @override
+  String get fontInter => 'Inter';
+
+  @override
+  String get alignLeft => 'Left';
+
+  @override
+  String get alignJustified => 'Justified';
+
+  @override
+  String get externalLinkCopied => 'External link copied';
+
+  @override
+  String get searchInBook => 'Search in book';
+
+  @override
+  String get searchBookHint => 'Word or phrase';
+
+  @override
+  String get searchStartTyping =>
+      'Enter a word or phrase to search the whole book.';
+
+  @override
+  String get searchNoResults => 'Nothing found';
+
+  @override
+  String searchResultsCount(int count) {
+    return '$count results';
+  }
+
+  @override
   String get fontSize => 'Text size';
 
   @override

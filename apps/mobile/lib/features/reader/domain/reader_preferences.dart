@@ -19,6 +19,8 @@ final class ReaderPreferences {
     this.pageAnimationEnabled = true,
     this.theme = ReaderTheme.light,
     this.paragraphStyle = ReaderParagraphStyle.book,
+    this.textAlignment = ReaderTextAlignment.left,
+    this.fontFamily = ReaderFontFamily.literata,
   });
 
   final double fontSize;
@@ -28,6 +30,8 @@ final class ReaderPreferences {
   final bool pageAnimationEnabled;
   final ReaderTheme theme;
   final ReaderParagraphStyle paragraphStyle;
+  final ReaderTextAlignment textAlignment;
+  final ReaderFontFamily fontFamily;
 
   ReaderPreferences copyWith({
     double? fontSize,
@@ -37,6 +41,8 @@ final class ReaderPreferences {
     bool? pageAnimationEnabled,
     ReaderTheme? theme,
     ReaderParagraphStyle? paragraphStyle,
+    ReaderTextAlignment? textAlignment,
+    ReaderFontFamily? fontFamily,
   }) {
     return ReaderPreferences(
       fontSize: fontSize ?? this.fontSize,
@@ -46,6 +52,8 @@ final class ReaderPreferences {
       pageAnimationEnabled: pageAnimationEnabled ?? this.pageAnimationEnabled,
       theme: theme ?? this.theme,
       paragraphStyle: paragraphStyle ?? this.paragraphStyle,
+      textAlignment: textAlignment ?? this.textAlignment,
+      fontFamily: fontFamily ?? this.fontFamily,
     );
   }
 }
@@ -97,6 +105,14 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
     _set(state.copyWith(paragraphStyle: value));
   }
 
+  void setTextAlignment(ReaderTextAlignment value) {
+    _set(state.copyWith(textAlignment: value));
+  }
+
+  void setFontFamily(ReaderFontFamily value) {
+    _set(state.copyWith(fontFamily: value));
+  }
+
   void _set(ReaderPreferences value) {
     _revision += 1;
     state = value;
@@ -120,6 +136,14 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
             (ReaderParagraphStyle value) => value.name == paragraphStyleName,
           )
           .firstOrNull;
+      final textAlignmentName = json['textAlignment'] as String?;
+      final textAlignment = ReaderTextAlignment.values
+          .where((ReaderTextAlignment value) => value.name == textAlignmentName)
+          .firstOrNull;
+      final fontFamilyName = json['fontFamily'] as String?;
+      final fontFamily = ReaderFontFamily.values
+          .where((ReaderFontFamily value) => value.name == fontFamilyName)
+          .firstOrNull;
       state = ReaderPreferences(
         fontSize: _numberInRange(json['fontSize'], 15, 24, 18),
         lineHeight: _numberInRange(json['lineHeight'], 1.3, 1.8, 1.55),
@@ -130,6 +154,8 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
             : true,
         theme: theme ?? ReaderTheme.light,
         paragraphStyle: paragraphStyle ?? ReaderParagraphStyle.book,
+        textAlignment: textAlignment ?? ReaderTextAlignment.left,
+        fontFamily: fontFamily ?? ReaderFontFamily.literata,
       );
     } on FormatException {
       return;
@@ -149,6 +175,8 @@ final class ReaderPreferencesNotifier extends Notifier<ReaderPreferences> {
         'pageAnimationEnabled': value.pageAnimationEnabled,
         'theme': value.theme.name,
         'paragraphStyle': value.paragraphStyle.name,
+        'textAlignment': value.textAlignment.name,
+        'fontFamily': value.fontFamily.name,
       }),
     );
   }

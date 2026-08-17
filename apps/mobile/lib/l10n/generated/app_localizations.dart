@@ -224,6 +224,78 @@ abstract class AppLocalizations {
   /// **'Modern'**
   String get modernParagraphStyle;
 
+  /// No description provided for @textAlignment.
+  ///
+  /// In en, this message translates to:
+  /// **'Alignment'**
+  String get textAlignment;
+
+  /// No description provided for @readerFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Font'**
+  String get readerFont;
+
+  /// No description provided for @fontLiterata.
+  ///
+  /// In en, this message translates to:
+  /// **'Literata'**
+  String get fontLiterata;
+
+  /// No description provided for @fontInter.
+  ///
+  /// In en, this message translates to:
+  /// **'Inter'**
+  String get fontInter;
+
+  /// No description provided for @alignLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get alignLeft;
+
+  /// No description provided for @alignJustified.
+  ///
+  /// In en, this message translates to:
+  /// **'Justified'**
+  String get alignJustified;
+
+  /// No description provided for @externalLinkCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'External link copied'**
+  String get externalLinkCopied;
+
+  /// No description provided for @searchInBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Search in book'**
+  String get searchInBook;
+
+  /// No description provided for @searchBookHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Word or phrase'**
+  String get searchBookHint;
+
+  /// No description provided for @searchStartTyping.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a word or phrase to search the whole book.'**
+  String get searchStartTyping;
+
+  /// No description provided for @searchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing found'**
+  String get searchNoResults;
+
+  /// No description provided for @searchResultsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} results'**
+  String searchResultsCount(int count);
+
   /// No description provided for @fontSize.
   ///
   /// In en, this message translates to:

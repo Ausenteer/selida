@@ -1,6 +1,56 @@
 import 'dart:typed_data';
 
-enum ParsedBlockKind { paragraph, heading, quote }
+enum ParsedBlockKind { paragraph, heading, quote, listItem, separator, image }
+
+final class ParsedInlineSpan {
+  const ParsedInlineSpan({
+    required this.startOffset,
+    required this.endOffset,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.href,
+    this.isFootnote = false,
+    this.targetChapterOrdinal,
+    this.targetOffset,
+  });
+
+  final int startOffset;
+  final int endOffset;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final String? href;
+  final bool isFootnote;
+  final int? targetChapterOrdinal;
+  final int? targetOffset;
+
+  ParsedInlineSpan copyWith({int? targetChapterOrdinal, int? targetOffset}) {
+    return ParsedInlineSpan(
+      startOffset: startOffset,
+      endOffset: endOffset,
+      bold: bold,
+      italic: italic,
+      underline: underline,
+      href: href,
+      isFootnote: isFootnote,
+      targetChapterOrdinal: targetChapterOrdinal ?? this.targetChapterOrdinal,
+      targetOffset: targetOffset ?? this.targetOffset,
+    );
+  }
+
+  Map<String, Object> toJson() => <String, Object>{
+    'start': startOffset,
+    'end': endOffset,
+    if (bold) 'bold': true,
+    if (italic) 'italic': true,
+    if (underline) 'underline': true,
+    'href': ?href,
+    if (isFootnote) 'footnote': true,
+    'targetChapter': ?targetChapterOrdinal,
+    'targetOffset': ?targetOffset,
+  };
+}
 
 final class ParsedBlock {
   const ParsedBlock({
@@ -8,12 +58,42 @@ final class ParsedBlock {
     required this.text,
     required this.startOffset,
     required this.endOffset,
+    this.inlineSpans = const <ParsedInlineSpan>[],
+    this.resourceHref,
+    this.altText,
   });
 
   final ParsedBlockKind kind;
   final String text;
   final int startOffset;
   final int endOffset;
+  final List<ParsedInlineSpan> inlineSpans;
+  final String? resourceHref;
+  final String? altText;
+
+  ParsedBlock copyWith({List<ParsedInlineSpan>? inlineSpans}) {
+    return ParsedBlock(
+      kind: kind,
+      text: text,
+      startOffset: startOffset,
+      endOffset: endOffset,
+      inlineSpans: inlineSpans ?? this.inlineSpans,
+      resourceHref: resourceHref,
+      altText: altText,
+    );
+  }
+}
+
+final class ParsedResource {
+  const ParsedResource({
+    required this.href,
+    required this.mediaType,
+    required this.bytes,
+  });
+
+  final String href;
+  final String mediaType;
+  final Uint8List bytes;
 }
 
 final class ParsedChapter {
@@ -61,6 +141,7 @@ final class ParsedBook {
     required this.toc,
     required this.coverBytes,
     required this.coverExtension,
+    this.resources = const <ParsedResource>[],
   });
 
   final String format;
@@ -72,6 +153,7 @@ final class ParsedBook {
   final List<ParsedTocEntry> toc;
   final Uint8List? coverBytes;
   final String? coverExtension;
+  final List<ParsedResource> resources;
 
   int get totalLength => chapters.fold<int>(
     0,

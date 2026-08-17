@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
@@ -98,23 +100,30 @@ final class BookImportService {
       path.join(booksDirectory.path, '$bookId$extension'),
     );
     await File(sourcePath).copy(storedBookFile.path);
-
+    final resourceDirectory = Directory(
+      path.join(booksDirectory.path, '$bookId-resources'),
+    );
     String? coverPath;
-    if (parsed.coverBytes case final coverBytes?) {
-      final coverExtension = parsed.coverExtension ?? '.jpg';
-      final coverFile = File(
-        path.join(coversDirectory.path, '$bookId$coverExtension'),
-      );
-      await coverFile.writeAsBytes(coverBytes, flush: true);
-      coverPath = coverFile.path;
-    }
-
     try {
+      final resourcePaths = await _storeResources(
+        resources: parsed.resources,
+        directory: resourceDirectory,
+      );
+      if (parsed.coverBytes case final coverBytes?) {
+        final coverExtension = parsed.coverExtension ?? '.jpg';
+        final coverFile = File(
+          path.join(coversDirectory.path, '$bookId$coverExtension'),
+        );
+        await coverFile.writeAsBytes(coverBytes, flush: true);
+        coverPath = coverFile.path;
+      }
+
       await _storeBook(
         id: bookId,
         parsed: parsed,
         filePath: storedBookFile.path,
         coverPath: coverPath,
+        resourcePaths: resourcePaths,
       );
     } on Object {
       if (storedBookFile.existsSync()) {
@@ -122,6 +131,9 @@ final class BookImportService {
       }
       if (coverPath != null && File(coverPath).existsSync()) {
         await File(coverPath).delete();
+      }
+      if (resourceDirectory.existsSync()) {
+        await resourceDirectory.delete(recursive: true);
       }
       rethrow;
     }
@@ -156,6 +168,11 @@ final class BookImportService {
     });
     await _deleteIfPresent(book.filePath);
     await _deleteIfPresent(book.coverPath);
+    if (book.filePath case final String filePath) {
+      await _deleteDirectoryIfPresent(
+        path.join(path.dirname(filePath), '$bookId-resources'),
+      );
+    }
   }
 
   bool isSupportedPath(String filePath) {
@@ -168,6 +185,7 @@ final class BookImportService {
     required ParsedBook parsed,
     required String filePath,
     required String? coverPath,
+    required Map<String, String> resourcePaths,
   }) async {
     final now = DateTime.now().toUtc();
     final chapterIds = <int, String>{};
@@ -202,6 +220,19 @@ final class BookImportService {
             textContent: block.text,
             startOffset: block.startOffset,
             endOffset: block.endOffset,
+            inlineSpansJson: Value<String>(
+              jsonEncode(
+                block.inlineSpans
+                    .map((span) => span.toJson())
+                    .toList(growable: false),
+              ),
+            ),
+            resourcePath: Value<String?>(
+              block.resourceHref == null
+                  ? null
+                  : resourcePaths[block.resourceHref],
+            ),
+            altText: Value<String?>(block.altText),
           ),
         );
       }
@@ -253,6 +284,40 @@ final class BookImportService {
     final file = File(filePath);
     if (file.existsSync()) {
       await file.delete();
+    }
+  }
+
+  Future<Map<String, String>> _storeResources({
+    required List<ParsedResource> resources,
+    required Directory directory,
+  }) async {
+    if (resources.isEmpty) {
+      return const <String, String>{};
+    }
+    await directory.create(recursive: true);
+    final result = <String, String>{};
+    for (final resource in resources) {
+      final digest = sha256.convert(utf8.encode(resource.href)).toString();
+      final extension = switch (resource.mediaType) {
+        'image/jpeg' => '.jpg',
+        'image/png' => '.png',
+        'image/gif' => '.gif',
+        'image/webp' => '.webp',
+        _ => path.extension(resource.href).toLowerCase(),
+      };
+      final file = File(
+        path.join(directory.path, '${digest.substring(0, 24)}$extension'),
+      );
+      await file.writeAsBytes(resource.bytes, flush: true);
+      result[resource.href] = file.path;
+    }
+    return Map<String, String>.unmodifiable(result);
+  }
+
+  Future<void> _deleteDirectoryIfPresent(String directoryPath) async {
+    final directory = Directory(directoryPath);
+    if (directory.existsSync()) {
+      await directory.delete(recursive: true);
     }
   }
 }

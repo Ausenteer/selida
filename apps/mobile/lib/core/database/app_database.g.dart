@@ -1319,6 +1319,28 @@ class $ContentBlocksTable extends ContentBlocks
     requiredDuringInsert: false,
     defaultValue: const Constant('[]'),
   );
+  static const VerificationMeta _resourcePathMeta = const VerificationMeta(
+    'resourcePath',
+  );
+  @override
+  late final GeneratedColumn<String> resourcePath = GeneratedColumn<String>(
+    'resource_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _altTextMeta = const VerificationMeta(
+    'altText',
+  );
+  @override
+  late final GeneratedColumn<String> altText = GeneratedColumn<String>(
+    'alt_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1329,6 +1351,8 @@ class $ContentBlocksTable extends ContentBlocks
     startOffset,
     endOffset,
     inlineSpansJson,
+    resourcePath,
+    altText,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1410,6 +1434,21 @@ class $ContentBlocksTable extends ContentBlocks
         ),
       );
     }
+    if (data.containsKey('resource_path')) {
+      context.handle(
+        _resourcePathMeta,
+        resourcePath.isAcceptableOrUnknown(
+          data['resource_path']!,
+          _resourcePathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('alt_text')) {
+      context.handle(
+        _altTextMeta,
+        altText.isAcceptableOrUnknown(data['alt_text']!, _altTextMeta),
+      );
+    }
     return context;
   }
 
@@ -1451,6 +1490,14 @@ class $ContentBlocksTable extends ContentBlocks
         DriftSqlType.string,
         data['${effectivePrefix}inline_spans_json'],
       )!,
+      resourcePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}resource_path'],
+      ),
+      altText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}alt_text'],
+      ),
     );
   }
 
@@ -1470,6 +1517,8 @@ class StoredContentBlock extends DataClass
   final int startOffset;
   final int endOffset;
   final String inlineSpansJson;
+  final String? resourcePath;
+  final String? altText;
   const StoredContentBlock({
     required this.id,
     required this.chapterId,
@@ -1479,6 +1528,8 @@ class StoredContentBlock extends DataClass
     required this.startOffset,
     required this.endOffset,
     required this.inlineSpansJson,
+    this.resourcePath,
+    this.altText,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1491,6 +1542,12 @@ class StoredContentBlock extends DataClass
     map['start_offset'] = Variable<int>(startOffset);
     map['end_offset'] = Variable<int>(endOffset);
     map['inline_spans_json'] = Variable<String>(inlineSpansJson);
+    if (!nullToAbsent || resourcePath != null) {
+      map['resource_path'] = Variable<String>(resourcePath);
+    }
+    if (!nullToAbsent || altText != null) {
+      map['alt_text'] = Variable<String>(altText);
+    }
     return map;
   }
 
@@ -1504,6 +1561,12 @@ class StoredContentBlock extends DataClass
       startOffset: Value(startOffset),
       endOffset: Value(endOffset),
       inlineSpansJson: Value(inlineSpansJson),
+      resourcePath: resourcePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(resourcePath),
+      altText: altText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(altText),
     );
   }
 
@@ -1521,6 +1584,8 @@ class StoredContentBlock extends DataClass
       startOffset: serializer.fromJson<int>(json['startOffset']),
       endOffset: serializer.fromJson<int>(json['endOffset']),
       inlineSpansJson: serializer.fromJson<String>(json['inlineSpansJson']),
+      resourcePath: serializer.fromJson<String?>(json['resourcePath']),
+      altText: serializer.fromJson<String?>(json['altText']),
     );
   }
   @override
@@ -1535,6 +1600,8 @@ class StoredContentBlock extends DataClass
       'startOffset': serializer.toJson<int>(startOffset),
       'endOffset': serializer.toJson<int>(endOffset),
       'inlineSpansJson': serializer.toJson<String>(inlineSpansJson),
+      'resourcePath': serializer.toJson<String?>(resourcePath),
+      'altText': serializer.toJson<String?>(altText),
     };
   }
 
@@ -1547,6 +1614,8 @@ class StoredContentBlock extends DataClass
     int? startOffset,
     int? endOffset,
     String? inlineSpansJson,
+    Value<String?> resourcePath = const Value.absent(),
+    Value<String?> altText = const Value.absent(),
   }) => StoredContentBlock(
     id: id ?? this.id,
     chapterId: chapterId ?? this.chapterId,
@@ -1556,6 +1625,8 @@ class StoredContentBlock extends DataClass
     startOffset: startOffset ?? this.startOffset,
     endOffset: endOffset ?? this.endOffset,
     inlineSpansJson: inlineSpansJson ?? this.inlineSpansJson,
+    resourcePath: resourcePath.present ? resourcePath.value : this.resourcePath,
+    altText: altText.present ? altText.value : this.altText,
   );
   StoredContentBlock copyWithCompanion(ContentBlocksCompanion data) {
     return StoredContentBlock(
@@ -1573,6 +1644,10 @@ class StoredContentBlock extends DataClass
       inlineSpansJson: data.inlineSpansJson.present
           ? data.inlineSpansJson.value
           : this.inlineSpansJson,
+      resourcePath: data.resourcePath.present
+          ? data.resourcePath.value
+          : this.resourcePath,
+      altText: data.altText.present ? data.altText.value : this.altText,
     );
   }
 
@@ -1586,7 +1661,9 @@ class StoredContentBlock extends DataClass
           ..write('textContent: $textContent, ')
           ..write('startOffset: $startOffset, ')
           ..write('endOffset: $endOffset, ')
-          ..write('inlineSpansJson: $inlineSpansJson')
+          ..write('inlineSpansJson: $inlineSpansJson, ')
+          ..write('resourcePath: $resourcePath, ')
+          ..write('altText: $altText')
           ..write(')'))
         .toString();
   }
@@ -1601,6 +1678,8 @@ class StoredContentBlock extends DataClass
     startOffset,
     endOffset,
     inlineSpansJson,
+    resourcePath,
+    altText,
   );
   @override
   bool operator ==(Object other) =>
@@ -1613,7 +1692,9 @@ class StoredContentBlock extends DataClass
           other.textContent == this.textContent &&
           other.startOffset == this.startOffset &&
           other.endOffset == this.endOffset &&
-          other.inlineSpansJson == this.inlineSpansJson);
+          other.inlineSpansJson == this.inlineSpansJson &&
+          other.resourcePath == this.resourcePath &&
+          other.altText == this.altText);
 }
 
 class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
@@ -1625,6 +1706,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
   final Value<int> startOffset;
   final Value<int> endOffset;
   final Value<String> inlineSpansJson;
+  final Value<String?> resourcePath;
+  final Value<String?> altText;
   final Value<int> rowid;
   const ContentBlocksCompanion({
     this.id = const Value.absent(),
@@ -1635,6 +1718,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
     this.startOffset = const Value.absent(),
     this.endOffset = const Value.absent(),
     this.inlineSpansJson = const Value.absent(),
+    this.resourcePath = const Value.absent(),
+    this.altText = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ContentBlocksCompanion.insert({
@@ -1646,6 +1731,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
     required int startOffset,
     required int endOffset,
     this.inlineSpansJson = const Value.absent(),
+    this.resourcePath = const Value.absent(),
+    this.altText = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        chapterId = Value(chapterId),
@@ -1663,6 +1750,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
     Expression<int>? startOffset,
     Expression<int>? endOffset,
     Expression<String>? inlineSpansJson,
+    Expression<String>? resourcePath,
+    Expression<String>? altText,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1674,6 +1763,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
       if (startOffset != null) 'start_offset': startOffset,
       if (endOffset != null) 'end_offset': endOffset,
       if (inlineSpansJson != null) 'inline_spans_json': inlineSpansJson,
+      if (resourcePath != null) 'resource_path': resourcePath,
+      if (altText != null) 'alt_text': altText,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1687,6 +1778,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
     Value<int>? startOffset,
     Value<int>? endOffset,
     Value<String>? inlineSpansJson,
+    Value<String?>? resourcePath,
+    Value<String?>? altText,
     Value<int>? rowid,
   }) {
     return ContentBlocksCompanion(
@@ -1698,6 +1791,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
       startOffset: startOffset ?? this.startOffset,
       endOffset: endOffset ?? this.endOffset,
       inlineSpansJson: inlineSpansJson ?? this.inlineSpansJson,
+      resourcePath: resourcePath ?? this.resourcePath,
+      altText: altText ?? this.altText,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1729,6 +1824,12 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
     if (inlineSpansJson.present) {
       map['inline_spans_json'] = Variable<String>(inlineSpansJson.value);
     }
+    if (resourcePath.present) {
+      map['resource_path'] = Variable<String>(resourcePath.value);
+    }
+    if (altText.present) {
+      map['alt_text'] = Variable<String>(altText.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1746,6 +1847,8 @@ class ContentBlocksCompanion extends UpdateCompanion<StoredContentBlock> {
           ..write('startOffset: $startOffset, ')
           ..write('endOffset: $endOffset, ')
           ..write('inlineSpansJson: $inlineSpansJson, ')
+          ..write('resourcePath: $resourcePath, ')
+          ..write('altText: $altText, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9021,6 +9124,8 @@ typedef $$ContentBlocksTableCreateCompanionBuilder =
       required int startOffset,
       required int endOffset,
       Value<String> inlineSpansJson,
+      Value<String?> resourcePath,
+      Value<String?> altText,
       Value<int> rowid,
     });
 typedef $$ContentBlocksTableUpdateCompanionBuilder =
@@ -9033,6 +9138,8 @@ typedef $$ContentBlocksTableUpdateCompanionBuilder =
       Value<int> startOffset,
       Value<int> endOffset,
       Value<String> inlineSpansJson,
+      Value<String?> resourcePath,
+      Value<String?> altText,
       Value<int> rowid,
     });
 
@@ -9107,6 +9214,16 @@ class $$ContentBlocksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get resourcePath => $composableBuilder(
+    column: $table.resourcePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get altText => $composableBuilder(
+    column: $table.altText,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$ChaptersTableFilterComposer get chapterId {
     final $$ChaptersTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -9175,6 +9292,16 @@ class $$ContentBlocksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get resourcePath => $composableBuilder(
+    column: $table.resourcePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get altText => $composableBuilder(
+    column: $table.altText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ChaptersTableOrderingComposer get chapterId {
     final $$ChaptersTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -9234,6 +9361,14 @@ class $$ContentBlocksTableAnnotationComposer
     column: $table.inlineSpansJson,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get resourcePath => $composableBuilder(
+    column: $table.resourcePath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get altText =>
+      $composableBuilder(column: $table.altText, builder: (column) => column);
 
   $$ChaptersTableAnnotationComposer get chapterId {
     final $$ChaptersTableAnnotationComposer composer = $composerBuilder(
@@ -9295,6 +9430,8 @@ class $$ContentBlocksTableTableManager
                 Value<int> startOffset = const Value.absent(),
                 Value<int> endOffset = const Value.absent(),
                 Value<String> inlineSpansJson = const Value.absent(),
+                Value<String?> resourcePath = const Value.absent(),
+                Value<String?> altText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ContentBlocksCompanion(
                 id: id,
@@ -9305,6 +9442,8 @@ class $$ContentBlocksTableTableManager
                 startOffset: startOffset,
                 endOffset: endOffset,
                 inlineSpansJson: inlineSpansJson,
+                resourcePath: resourcePath,
+                altText: altText,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -9317,6 +9456,8 @@ class $$ContentBlocksTableTableManager
                 required int startOffset,
                 required int endOffset,
                 Value<String> inlineSpansJson = const Value.absent(),
+                Value<String?> resourcePath = const Value.absent(),
+                Value<String?> altText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ContentBlocksCompanion.insert(
                 id: id,
@@ -9327,6 +9468,8 @@ class $$ContentBlocksTableTableManager
                 startOffset: startOffset,
                 endOffset: endOffset,
                 inlineSpansJson: inlineSpansJson,
+                resourcePath: resourcePath,
+                altText: altText,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

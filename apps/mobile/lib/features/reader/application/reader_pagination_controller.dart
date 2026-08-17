@@ -8,23 +8,48 @@ import 'package:selida/features/reader/domain/reader_page.dart';
 
 typedef InitialReaderPageCallback = void Function(int pageIndex);
 
+enum ReaderPaginationSource { cache, generated, prefetch }
+
+@immutable
+final class ReaderPaginationMetrics {
+  const ReaderPaginationMetrics({
+    required this.chapterId,
+    required this.source,
+    required this.elapsed,
+    required this.pageCount,
+    required this.frameSlices,
+  });
+
+  final String chapterId;
+  final ReaderPaginationSource source;
+  final Duration elapsed;
+  final int pageCount;
+  final int frameSlices;
+}
+
 final class ReaderPaginationController extends ChangeNotifier {
   ReaderPaginationController({
     required AppDatabase database,
     required this.bookId,
+    this.onMetrics,
   }) : _cache = ReaderPaginationCache(database);
 
   final ReaderPaginationCache _cache;
   final String bookId;
+  final ValueChanged<ReaderPaginationMetrics>? onMetrics;
 
   List<ReaderPage>? _pages;
+  ReaderPaginationMetrics? _lastMetrics;
   String? _layoutKey;
   String? _pendingLayoutKey;
+  final Set<String> _prefetching = <String>{};
+  final Set<String> _prefetched = <String>{};
   var _complete = false;
   var _generation = 0;
   var _disposed = false;
 
   List<ReaderPage>? get pages => _pages;
+  ReaderPaginationMetrics? get lastMetrics => _lastMetrics;
   String? get layoutKey => _layoutKey;
   bool get complete => _complete;
 
@@ -90,6 +115,7 @@ final class ReaderPaginationController extends ChangeNotifier {
     required int generation,
     required InitialReaderPageCallback onInitialPage,
   }) async {
+    final elapsed = Stopwatch()..start();
     final restored = await _restoreCachedPagination(
       blocks: blocks,
       spec: spec,
@@ -100,6 +126,7 @@ final class ReaderPaginationController extends ChangeNotifier {
       currentTextOffset: currentTextOffset,
       generation: generation,
       onInitialPage: onInitialPage,
+      elapsed: elapsed,
     );
     if (restored || !_isCurrent(generation)) {
       return;
@@ -108,8 +135,10 @@ final class ReaderPaginationController extends ChangeNotifier {
     final cursor = ReaderPaginator.start(blocks: blocks, spec: spec);
     final generated = <ReaderPage>[];
     var published = false;
+    var frameSlices = 0;
 
     while (!cursor.isComplete) {
+      frameSlices += 1;
       final budget = Stopwatch()..start();
       do {
         final page = cursor.nextPage();
@@ -165,6 +194,17 @@ final class ReaderPaginationController extends ChangeNotifier {
         ),
       );
     }
+    if (_isCurrent(generation)) {
+      _recordMetrics(
+        ReaderPaginationMetrics(
+          chapterId: chapterId,
+          source: ReaderPaginationSource.generated,
+          elapsed: elapsed.elapsed,
+          pageCount: generated.length,
+          frameSlices: frameSlices,
+        ),
+      );
+    }
   }
 
   Future<bool> _restoreCachedPagination({
@@ -177,6 +217,7 @@ final class ReaderPaginationController extends ChangeNotifier {
     required int currentTextOffset,
     required int generation,
     required InitialReaderPageCallback onInitialPage,
+    required Stopwatch elapsed,
   }) async {
     List<CachedReaderPageRange>? ranges;
     try {
@@ -195,7 +236,9 @@ final class ReaderPaginationController extends ChangeNotifier {
 
     final restoredPages = <ReaderPage>[];
     var rangeIndex = 0;
+    var frameSlices = 0;
     while (rangeIndex < ranges.length) {
+      frameSlices += 1;
       final budget = Stopwatch()..start();
       do {
         final range = ranges[rangeIndex];
@@ -230,7 +273,95 @@ final class ReaderPaginationController extends ChangeNotifier {
     _complete = true;
     onInitialPage(targetPage < 0 ? 0 : targetPage);
     notifyListeners();
+    _recordMetrics(
+      ReaderPaginationMetrics(
+        chapterId: chapterId,
+        source: ReaderPaginationSource.cache,
+        elapsed: elapsed.elapsed,
+        pageCount: restoredPages.length,
+        frameSlices: frameSlices,
+      ),
+    );
     return true;
+  }
+
+  Future<void> prefetch({
+    required List<ReaderBlock> blocks,
+    required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
+    required String chapterId,
+    required int chapterLength,
+  }) async {
+    final key = '$chapterId:${identity.fingerprint}';
+    if (_disposed || _prefetched.contains(key) || !_prefetching.add(key)) {
+      return;
+    }
+    final elapsed = Stopwatch()..start();
+    var frameSlices = 0;
+    try {
+      try {
+        final cached = await _cache.load(
+          bookId: bookId,
+          chapterId: chapterId,
+          identity: identity,
+          maximumOffset: chapterLength,
+        );
+        if (cached != null) {
+          _prefetched.add(key);
+          _recordMetrics(
+            ReaderPaginationMetrics(
+              chapterId: chapterId,
+              source: ReaderPaginationSource.prefetch,
+              elapsed: elapsed.elapsed,
+              pageCount: cached.length,
+              frameSlices: 0,
+            ),
+          );
+          return;
+        }
+      } on Object {
+        // A failed cache lookup should not prevent a fresh pagination pass.
+      }
+
+      final cursor = ReaderPaginator.start(blocks: blocks, spec: spec);
+      final pages = <ReaderPage>[];
+      while (!cursor.isComplete && !_disposed) {
+        frameSlices += 1;
+        final budget = Stopwatch()..start();
+        do {
+          final page = cursor.nextPage();
+          if (page != null) {
+            pages.add(page);
+          }
+        } while (!cursor.isComplete && budget.elapsedMicroseconds < 4000);
+        if (!cursor.isComplete && !_disposed) {
+          await WidgetsBinding.instance.endOfFrame;
+        }
+      }
+      if (_disposed) {
+        return;
+      }
+      if (pages.isNotEmpty) {
+        await _storePaginationSafely(
+          chapterId: chapterId,
+          spec: spec,
+          identity: identity,
+          pages: pages,
+        );
+      }
+      _prefetched.add(key);
+      _recordMetrics(
+        ReaderPaginationMetrics(
+          chapterId: chapterId,
+          source: ReaderPaginationSource.prefetch,
+          elapsed: elapsed.elapsed,
+          pageCount: pages.length,
+          frameSlices: frameSlices,
+        ),
+      );
+    } finally {
+      _prefetching.remove(key);
+    }
   }
 
   Future<void> _storePaginationSafely({
@@ -250,6 +381,22 @@ final class ReaderPaginationController extends ChangeNotifier {
     } on Object catch (error) {
       debugPrint('Could not cache reader pagination: $error');
     }
+  }
+
+  void _recordMetrics(ReaderPaginationMetrics metrics) {
+    if (_disposed) {
+      return;
+    }
+    _lastMetrics = metrics;
+    onMetrics?.call(metrics);
+    assert(() {
+      debugPrint(
+        'Reader pagination ${metrics.source.name}: ${metrics.chapterId}, '
+        '${metrics.pageCount} pages in ${metrics.elapsed.inMilliseconds} ms '
+        'across ${metrics.frameSlices} frame slices',
+      );
+      return true;
+    }());
   }
 
   bool _isCurrent(int generation) => !_disposed && generation == _generation;

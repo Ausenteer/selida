@@ -49,6 +49,8 @@ class ContentBlocks extends Table {
   IntColumn get startOffset => integer()();
   IntColumn get endOffset => integer()();
   TextColumn get inlineSpansJson => text().withDefault(const Constant('[]'))();
+  TextColumn get resourcePath => text().nullable()();
+  TextColumn get altText => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
@@ -266,7 +268,7 @@ final class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -280,6 +282,10 @@ final class AppDatabase extends _$AppDatabase {
       }
       if (from < 3) {
         await migrator.addColumn(vocabularyItems, vocabularyItems.kind);
+      }
+      if (from < 4) {
+        await migrator.addColumn(contentBlocks, contentBlocks.resourcePath);
+        await migrator.addColumn(contentBlocks, contentBlocks.altText);
       }
     },
     beforeOpen: (OpeningDetails details) async {

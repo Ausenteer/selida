@@ -85,4 +85,54 @@ void main() {
 
     expect(selection?.endOffset, 7);
   });
+
+  test('selection extends from the end of one chapter into the next', () {
+    const controller = ReaderSelectionController();
+
+    final selection = controller.extendAcrossChapter(
+      currentChapterIndex: 0,
+      targetChapterIndex: 1,
+      currentSelection: const ReaderTextRange(startOffset: 4, endOffset: 7),
+      currentChapterText: 'The ending',
+      targetChapterText: 'Next chapter starts here.',
+      direction: 1,
+    );
+
+    expect(selection?.firstRange.startOffset, 4);
+    expect(selection?.firstRange.endOffset, 10);
+    expect(selection?.secondRange.startOffset, 0);
+    expect(selection?.secondRange.endOffset, 4);
+    expect(
+      selection?.selectedText(const <String>[
+        'The ending',
+        'Next chapter starts here.',
+      ]),
+      'ending\n\nNext',
+    );
+  });
+
+  test('selection extends backward across a chapter boundary', () {
+    const controller = ReaderSelectionController();
+
+    final selection = controller.extendAcrossChapter(
+      currentChapterIndex: 1,
+      targetChapterIndex: 0,
+      currentSelection: const ReaderTextRange(startOffset: 0, endOffset: 4),
+      currentChapterText: 'Next chapter',
+      targetChapterText: 'Previous ending',
+      direction: -1,
+    );
+
+    expect(selection?.firstRange.startOffset, 9);
+    expect(selection?.firstRange.endOffset, 15);
+    expect(selection?.secondRange.startOffset, 0);
+    expect(selection?.secondRange.endOffset, 4);
+    expect(
+      selection?.selectedText(const <String>[
+        'Previous ending',
+        'Next chapter',
+      ]),
+      'ending\n\nNext',
+    );
+  });
 }

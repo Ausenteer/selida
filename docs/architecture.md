@@ -17,14 +17,18 @@ The reader pipeline is:
 
 1. Copy the selected file into the application sandbox.
 2. Parse and normalize it in a worker isolate.
-3. Store books, chapters, blocks, and TOC entries in one Drift transaction.
+3. Store books, chapters, rich inline spans, embedded image resources, and TOC
+   entries in one Drift transaction.
 4. Lay out the current page exactly with TextPainter on the UI isolate.
-5. Prefetch adjacent pages and persist their UTF-16 ranges by layout fingerprint.
+5. Prefetch adjacent chapters in short frame slices and persist their UTF-16
+   page ranges by layout fingerprint.
 
 `ReaderScreen` coordinates the active reading session, while incremental
 pagination and cache restoration live in `ReaderPaginationController` and
 book-wide progress math lives in `ReaderBookNavigation`. Cross-page selection
-and boundary-swipe tracking are isolated in reader interaction controllers.
+and two-chapter selection, together with boundary-swipe tracking, are isolated
+in reader interaction controllers. Full-book search runs outside the UI isolate
+and returns exact chapter/UTF-16 locations.
 Reader chrome, contents, settings, translation popovers, and assistance sheets
 are separate presentation components in the same library.
 

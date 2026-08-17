@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -99,6 +100,7 @@ ParsedBook _parseTxt(Uint8List bytes, String sourceName) {
     ],
     coverBytes: null,
     coverExtension: null,
+    resources: const <ParsedResource>[],
   );
 }
 
@@ -215,13 +217,14 @@ ParsedBook _parseEpub(Uint8List bytes, String sourceName) {
     if (chapters.isEmpty) {
       throw const BookParseException(BookParseErrorCode.emptyBook);
     }
+    final resolvedChapters = _resolveInlineLinks(chapters);
 
     final chapterOrdinalByHref = <String, int>{
-      for (final chapter in chapters)
+      for (final chapter in resolvedChapters)
         if (chapter.href case final String href) href: chapter.ordinal,
     };
     final chaptersByHref = <String, ParsedChapter>{
-      for (final chapter in chapters)
+      for (final chapter in resolvedChapters)
         if (chapter.href case final String href) href: chapter,
     };
     final toc = <ParsedTocEntry>[];
@@ -241,7 +244,7 @@ ParsedBook _parseEpub(Uint8List bytes, String sourceName) {
       );
     }
     if (toc.isEmpty) {
-      for (final chapter in chapters) {
+      for (final chapter in resolvedChapters) {
         toc.add(
           ParsedTocEntry(
             ordinal: toc.length,
@@ -257,7 +260,7 @@ ParsedBook _parseEpub(Uint8List bytes, String sourceName) {
     final title = _metadataValue(packageDocument, 'title')?.trim();
     final author = _metadataValue(packageDocument, 'creator')?.trim();
     final language = _metadataValue(packageDocument, 'language')?.trim();
-    final canonicalText = chapters
+    final canonicalText = resolvedChapters
         .map((ParsedChapter chapter) => chapter.plainText)
         .join('\n\n');
     final cover = _readCover(
@@ -276,10 +279,15 @@ ParsedBook _parseEpub(Uint8List bytes, String sourceName) {
           ? _detectLanguage(canonicalText)
           : _normalizeLanguage(language),
       contentHash: sha256.convert(utf8.encode(canonicalText)).toString(),
-      chapters: List<ParsedChapter>.unmodifiable(chapters),
+      chapters: List<ParsedChapter>.unmodifiable(resolvedChapters),
       toc: List<ParsedTocEntry>.unmodifiable(toc),
       coverBytes: cover?.bytes,
       coverExtension: cover?.extension,
+      resources: _readEmbeddedResources(
+        chapters: resolvedChapters,
+        entries: entries,
+        manifest: manifest,
+      ),
     );
   } on BookParseException {
     rethrow;
@@ -308,8 +316,14 @@ ParsedChapter _parseXhtmlChapter({
   final anchorOffsets = <String, int>{};
   final chapterText = StringBuffer();
 
-  void addBlock(XmlElement element, ParsedBlockKind kind) {
-    final text = _collapseWhitespace(_elementText(element));
+  void appendBlock({
+    required ParsedBlockKind kind,
+    required String text,
+    List<ParsedInlineSpan> inlineSpans = const <ParsedInlineSpan>[],
+    Map<String, int> localAnchors = const <String, int>{},
+    String? resourceHref,
+    String? altText,
+  }) {
     if (text.isEmpty) {
       return;
     }
@@ -318,14 +332,8 @@ ParsedChapter _parseXhtmlChapter({
     }
     final start = chapterText.length;
     chapterText.write(text);
-    for (final anchored in <XmlElement>[
-      element,
-      ...element.descendants.whereType<XmlElement>(),
-    ]) {
-      final id = _attribute(anchored, 'id');
-      if (id != null && id.isNotEmpty) {
-        anchorOffsets.putIfAbsent(id, () => start);
-      }
+    for (final anchor in localAnchors.entries) {
+      anchorOffsets.putIfAbsent(anchor.key, () => start + anchor.value);
     }
     blocks.add(
       ParsedBlock(
@@ -333,22 +341,128 @@ ParsedChapter _parseXhtmlChapter({
         text: text,
         startOffset: start,
         endOffset: chapterText.length,
+        inlineSpans: List<ParsedInlineSpan>.unmodifiable(inlineSpans),
+        resourceHref: resourceHref,
+        altText: altText,
       ),
+    );
+  }
+
+  void addTextBlock(
+    XmlElement element,
+    ParsedBlockKind kind, {
+    String prefix = '',
+  }) {
+    final styled = _extractStyledText(element, chapterHref: href);
+    if (styled.text.isEmpty) {
+      return;
+    }
+    final effectiveKind = _looksLikeSceneSeparator(styled.text)
+        ? ParsedBlockKind.separator
+        : kind;
+    appendBlock(
+      kind: effectiveKind,
+      text: '$prefix${styled.text}',
+      inlineSpans: <ParsedInlineSpan>[
+        for (final span in styled.spans)
+          ParsedInlineSpan(
+            startOffset: span.startOffset + prefix.length,
+            endOffset: span.endOffset + prefix.length,
+            bold: span.bold,
+            italic: span.italic,
+            underline: span.underline,
+            href: span.href,
+            isFootnote: span.isFootnote,
+          ),
+      ],
+      localAnchors: <String, int>{
+        for (final anchor in styled.anchorOffsets.entries)
+          anchor.key: anchor.value + prefix.length,
+      },
+    );
+  }
+
+  void addImage(XmlElement element) {
+    final rawSource = _attribute(element, 'src');
+    if (rawSource == null || rawSource.trim().isEmpty) {
+      return;
+    }
+    final resourceHref = _resolveInlineHref(href, rawSource);
+    if (resourceHref == null || Uri.tryParse(resourceHref)?.hasScheme == true) {
+      return;
+    }
+    final alt = _collapseWhitespace(
+      _attribute(element, 'alt') ?? _attribute(element, 'title') ?? 'Image',
+    );
+    final id = _attribute(element, 'id');
+    appendBlock(
+      kind: ParsedBlockKind.image,
+      text: alt.isEmpty ? 'Image' : alt,
+      localAnchors: id == null || id.isEmpty
+          ? const <String, int>{}
+          : <String, int>{id: 0},
+      resourceHref: resourceHref.split('#').first,
+      altText: alt,
     );
   }
 
   void visit(XmlElement element) {
     final name = element.name.local.toLowerCase();
     if (<String>{'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}.contains(name)) {
-      addBlock(element, ParsedBlockKind.heading);
+      addTextBlock(element, ParsedBlockKind.heading);
       return;
     }
-    if (<String>{'p', 'li', 'pre'}.contains(name)) {
-      addBlock(element, ParsedBlockKind.paragraph);
+    if (name == 'li') {
+      final parent = element.parentElement;
+      final ordered = parent?.name.local.toLowerCase() == 'ol';
+      final siblings =
+          parent?.children
+              .whereType<XmlElement>()
+              .where(
+                (XmlElement child) => child.name.local.toLowerCase() == 'li',
+              )
+              .toList() ??
+          const <XmlElement>[];
+      final number = math.max(1, siblings.indexOf(element) + 1);
+      addTextBlock(
+        element,
+        ParsedBlockKind.listItem,
+        prefix: ordered ? '$number. ' : '• ',
+      );
+      for (final child in element.children.whereType<XmlElement>().where(
+        (XmlElement child) =>
+            <String>{'ol', 'ul'}.contains(child.name.local.toLowerCase()),
+      )) {
+        visit(child);
+      }
+      return;
+    }
+    if (<String>{'p', 'pre'}.contains(name)) {
+      addTextBlock(element, ParsedBlockKind.paragraph);
+      for (final image in element.descendants.whereType<XmlElement>().where(
+        (XmlElement child) => child.name.local.toLowerCase() == 'img',
+      )) {
+        addImage(image);
+      }
       return;
     }
     if (name == 'blockquote') {
-      addBlock(element, ParsedBlockKind.quote);
+      addTextBlock(element, ParsedBlockKind.quote);
+      return;
+    }
+    if (name == 'hr') {
+      final id = _attribute(element, 'id');
+      appendBlock(
+        kind: ParsedBlockKind.separator,
+        text: '⁕ ⁕ ⁕',
+        localAnchors: id == null || id.isEmpty
+            ? const <String, int>{}
+            : <String, int>{id: 0},
+      );
+      return;
+    }
+    if (name == 'img') {
+      addImage(element);
       return;
     }
     for (final child in element.children.whereType<XmlElement>()) {
@@ -358,7 +472,7 @@ ParsedChapter _parseXhtmlChapter({
 
   visit(body);
   if (blocks.isEmpty) {
-    addBlock(body, ParsedBlockKind.paragraph);
+    addTextBlock(body, ParsedBlockKind.paragraph);
   }
 
   final firstHeading = blocks
@@ -372,6 +486,293 @@ ParsedChapter _parseXhtmlChapter({
     blocks: List<ParsedBlock>.unmodifiable(blocks),
     anchorOffsets: Map<String, int>.unmodifiable(anchorOffsets),
   );
+}
+
+List<ParsedChapter> _resolveInlineLinks(List<ParsedChapter> chapters) {
+  final byHref = <String, ParsedChapter>{
+    for (final chapter in chapters)
+      if (chapter.href case final String href) href: chapter,
+  };
+  return <ParsedChapter>[
+    for (final chapter in chapters)
+      ParsedChapter(
+        ordinal: chapter.ordinal,
+        title: chapter.title,
+        href: chapter.href,
+        plainText: chapter.plainText,
+        anchorOffsets: chapter.anchorOffsets,
+        blocks: <ParsedBlock>[
+          for (final block in chapter.blocks)
+            block.copyWith(
+              inlineSpans: <ParsedInlineSpan>[
+                for (final span in block.inlineSpans)
+                  if (span.href case final String href)
+                    () {
+                      final parts = href.split('#');
+                      final targetChapter = byHref[parts.first];
+                      final fragment = parts.length > 1
+                          ? Uri.decodeComponent(parts.skip(1).join('#'))
+                          : null;
+                      return targetChapter == null
+                          ? span
+                          : span.copyWith(
+                              targetChapterOrdinal: targetChapter.ordinal,
+                              targetOffset: fragment == null
+                                  ? 0
+                                  : targetChapter.anchorOffsets[fragment] ?? 0,
+                            );
+                    }()
+                  else
+                    span,
+              ],
+            ),
+        ],
+      ),
+  ];
+}
+
+List<ParsedResource> _readEmbeddedResources({
+  required List<ParsedChapter> chapters,
+  required Map<String, ArchiveFile> entries,
+  required Map<String, _ManifestItem> manifest,
+}) {
+  final usedHrefs = <String>{
+    for (final chapter in chapters)
+      for (final block in chapter.blocks)
+        if (block.resourceHref case final String href) href,
+  };
+  final mediaTypes = <String, String>{
+    for (final item in manifest.values) item.href: item.mediaType,
+  };
+  final resources = <ParsedResource>[];
+  for (final href in usedHrefs) {
+    final file = entries[href];
+    if (file == null) {
+      continue;
+    }
+    final mediaType = mediaTypes[href] ?? _imageMediaType(href);
+    if (!<String>{
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+    }.contains(mediaType)) {
+      continue;
+    }
+    resources.add(
+      ParsedResource(href: href, mediaType: mediaType, bytes: file.content),
+    );
+  }
+  return List<ParsedResource>.unmodifiable(resources);
+}
+
+String _imageMediaType(String href) {
+  return switch (path.posix.extension(href).toLowerCase()) {
+    '.jpg' || '.jpeg' => 'image/jpeg',
+    '.png' => 'image/png',
+    '.gif' => 'image/gif',
+    '.webp' => 'image/webp',
+    _ => 'application/octet-stream',
+  };
+}
+
+String? _resolveInlineHref(String chapterHref, String rawHref) {
+  final trimmed = rawHref.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri?.hasScheme == true || trimmed.startsWith('//')) {
+    return trimmed;
+  }
+  final parts = trimmed.split('#');
+  final targetPath = parts.first.isEmpty
+      ? chapterHref
+      : _safeArchivePath(
+          path.posix.join(path.posix.dirname(chapterHref), parts.first),
+        );
+  if (parts.length == 1) {
+    return targetPath;
+  }
+  return '$targetPath#${parts.skip(1).join('#')}';
+}
+
+_StyledText _extractStyledText(XmlElement root, {required String chapterHref}) {
+  final output = StringBuffer();
+  final spans = <ParsedInlineSpan>[];
+  final anchors = <String, int>{};
+  _InlineStyleContext? activeStyle;
+  var activeStart = 0;
+  var pendingSpace = false;
+
+  void closeActiveSpan() {
+    final style = activeStyle;
+    if (style != null && style.hasDecoration && output.length > activeStart) {
+      spans.add(
+        ParsedInlineSpan(
+          startOffset: activeStart,
+          endOffset: output.length,
+          bold: style.bold,
+          italic: style.italic,
+          underline: style.underline,
+          href: style.href,
+          isFootnote: style.isFootnote,
+        ),
+      );
+    }
+  }
+
+  void switchStyle(_InlineStyleContext style) {
+    if (activeStyle == style) {
+      return;
+    }
+    closeActiveSpan();
+    activeStyle = style;
+    activeStart = output.length;
+  }
+
+  void appendRune(int rune, _InlineStyleContext style) {
+    switchStyle(style);
+    output.writeCharCode(rune);
+  }
+
+  void appendText(String value, _InlineStyleContext style) {
+    for (final rune in value.runes) {
+      final isWhitespace =
+          rune == 0x00a0 || String.fromCharCode(rune).trim().isEmpty;
+      if (isWhitespace) {
+        if (output.isNotEmpty) {
+          pendingSpace = true;
+        }
+        continue;
+      }
+      if (pendingSpace) {
+        appendRune(0x20, style);
+        pendingSpace = false;
+      }
+      appendRune(rune, style);
+    }
+  }
+
+  void visit(XmlNode node, _InlineStyleContext style, {bool isRoot = false}) {
+    if (node is XmlText) {
+      appendText(node.value, style);
+      return;
+    }
+    if (node is! XmlElement) {
+      return;
+    }
+    final name = node.name.local.toLowerCase();
+    final id = _attribute(node, 'id');
+    if (id != null && id.isNotEmpty) {
+      anchors.putIfAbsent(id, () => output.length);
+    }
+    if (name == 'br') {
+      if (output.isNotEmpty) {
+        pendingSpace = true;
+      }
+      return;
+    }
+    if (name == 'img' || (!isRoot && <String>{'ol', 'ul'}.contains(name))) {
+      return;
+    }
+    final rawHref = name == 'a' ? _attribute(node, 'href') : null;
+    final epubType = (_attribute(node, 'type') ?? '')
+        .split(RegExp(r'\s+'))
+        .toSet();
+    final role = _attribute(node, 'role') ?? '';
+    final nextStyle = style.copyWith(
+      bold: style.bold || name == 'b' || name == 'strong',
+      italic: style.italic || name == 'i' || name == 'em' || name == 'cite',
+      underline: style.underline || name == 'u' || rawHref != null,
+      href: rawHref == null
+          ? style.href
+          : _resolveInlineHref(chapterHref, rawHref),
+      isFootnote:
+          style.isFootnote ||
+          epubType.contains('noteref') ||
+          role == 'doc-noteref',
+    );
+    for (final child in node.children) {
+      visit(child, nextStyle);
+    }
+  }
+
+  visit(root, const _InlineStyleContext(), isRoot: true);
+  closeActiveSpan();
+  return _StyledText(
+    text: output.toString(),
+    spans: List<ParsedInlineSpan>.unmodifiable(spans),
+    anchorOffsets: Map<String, int>.unmodifiable(anchors),
+  );
+}
+
+bool _looksLikeSceneSeparator(String text) {
+  final compact = text.replaceAll(RegExp(r'\s+'), '');
+  return compact.length >= 3 &&
+      compact.runes.every(
+        (int rune) =>
+            rune == 0x2a || rune == 0x2022 || rune == 0x2055 || rune == 0x2014,
+      );
+}
+
+final class _StyledText {
+  const _StyledText({
+    required this.text,
+    required this.spans,
+    required this.anchorOffsets,
+  });
+
+  final String text;
+  final List<ParsedInlineSpan> spans;
+  final Map<String, int> anchorOffsets;
+}
+
+final class _InlineStyleContext {
+  const _InlineStyleContext({
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.href,
+    this.isFootnote = false,
+  });
+
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final String? href;
+  final bool isFootnote;
+
+  bool get hasDecoration =>
+      bold || italic || underline || href != null || isFootnote;
+
+  _InlineStyleContext copyWith({
+    bool? bold,
+    bool? italic,
+    bool? underline,
+    String? href,
+    bool? isFootnote,
+  }) {
+    return _InlineStyleContext(
+      bold: bold ?? this.bold,
+      italic: italic ?? this.italic,
+      underline: underline ?? this.underline,
+      href: href ?? this.href,
+      isFootnote: isFootnote ?? this.isFootnote,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _InlineStyleContext &&
+      other.bold == bold &&
+      other.italic == italic &&
+      other.underline == underline &&
+      other.href == href &&
+      other.isFootnote == isFootnote;
+
+  @override
+  int get hashCode => Object.hash(bold, italic, underline, href, isFootnote);
 }
 
 List<_TocReference> _readToc({

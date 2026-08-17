@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -12,12 +13,14 @@ final class ReaderWordHit {
     required this.startOffset,
     required this.endOffset,
     required this.rect,
+    this.link,
   });
 
   final String word;
   final int startOffset;
   final int endOffset;
   final Rect rect;
+  final ReaderInlineSpan? link;
 }
 
 final class ReaderPageSurface extends StatefulWidget {
@@ -27,6 +30,7 @@ final class ReaderPageSurface extends StatefulWidget {
     required this.onWordTap,
     required this.onBlankTap,
     this.onTextSelected,
+    this.onLinkTap,
     this.activeSelection,
     this.selectionIsControlled = false,
     this.onSelectionChanged,
@@ -46,6 +50,7 @@ final class ReaderPageSurface extends StatefulWidget {
   final ValueChanged<ReaderWordHit> onWordTap;
   final ValueChanged<Offset> onBlankTap;
   final ValueChanged<ReaderTextSelection>? onTextSelected;
+  final ValueChanged<ReaderInlineSpan>? onLinkTap;
   final ReaderTextRange? activeSelection;
   final bool selectionIsControlled;
   final ValueChanged<ReaderTextRange?>? onSelectionChanged;
@@ -138,6 +143,36 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
           },
           child: CustomPaint(painter: painter, size: Size.infinite),
         ),
+        for (final segment in widget.page.segments)
+          if (segment.kind == ReaderBlockKind.image)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: segment.top,
+              height: segment.height,
+              child: IgnorePointer(
+                child: Semantics(
+                  image: true,
+                  label: segment.altText ?? segment.text,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child:
+                        segment.resourcePath != null &&
+                            File(segment.resourcePath!).existsSync()
+                        ? Image.file(
+                            File(segment.resourcePath!),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => _ImageFallback(
+                              label: segment.altText ?? segment.text,
+                            ),
+                          )
+                        : _ImageFallback(
+                            label: segment.altText ?? segment.text,
+                          ),
+                  ),
+                ),
+              ),
+            ),
         for (final handle in handles)
           Positioned(
             left: handle.position.dx - 18,
@@ -184,6 +219,8 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
     final hit = painter.wordAt(details.localPosition);
     if (hit == null) {
       widget.onBlankTap(details.localPosition);
+    } else if (hit.link case final link?) {
+      widget.onLinkTap?.call(link);
     } else {
       widget.onWordTap(hit);
     }
@@ -246,6 +283,40 @@ final class _ReaderPageSurfaceState extends State<ReaderPageSurface> {
   }
 }
 
+final class _ImageFallback extends StatelessWidget {
+  const _ImageFallback({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.image_outlined),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 final class _SelectionHandle extends StatelessWidget {
   const _SelectionHandle({required this.color});
 
@@ -304,11 +375,16 @@ final class _ReaderPagePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final segment in page.segments) {
+      if (segment.kind == ReaderBlockKind.image) {
+        continue;
+      }
       final prefix = segment.indentFirstLine
           ? ReaderPaginator.paragraphIndent
           : '';
       final painter = ReaderPaginator.createPainter(
-        text: '$prefix${segment.text}',
+        text: segment.text,
+        prefix: prefix,
+        inlineSpans: segment.inlineSpans,
         kind: segment.kind,
         spec: spec,
       )..layout(maxWidth: spec.width);
@@ -342,6 +418,9 @@ final class _ReaderPagePainter extends CustomPainter {
 
   ReaderWordHit? wordAt(Offset position) {
     for (final segment in page.segments) {
+      if (segment.kind == ReaderBlockKind.image) {
+        continue;
+      }
       if (position.dy < segment.top ||
           position.dy > segment.top + segment.height) {
         continue;
@@ -350,7 +429,9 @@ final class _ReaderPagePainter extends CustomPainter {
           ? ReaderPaginator.paragraphIndent
           : '';
       final painter = ReaderPaginator.createPainter(
-        text: '$prefix${segment.text}',
+        text: segment.text,
+        prefix: prefix,
+        inlineSpans: segment.inlineSpans,
         kind: segment.kind,
         spec: spec,
       )..layout(maxWidth: spec.width);
@@ -389,11 +470,21 @@ final class _ReaderPagePainter extends CustomPainter {
           ? Rect.fromLTWH(position.dx, position.dy, 1, spec.fontSize)
           : boxes.first.toRect().shift(Offset(0, segment.top));
       painter.dispose();
+      ReaderInlineSpan? link;
+      for (final span in segment.inlineSpans) {
+        if (span.href != null &&
+            span.startOffset < end &&
+            span.endOffset > start) {
+          link = span;
+          break;
+        }
+      }
       return ReaderWordHit(
         word: word,
         startOffset: segment.globalStart + start,
         endOffset: segment.globalStart + end,
         rect: rect,
+        link: link,
       );
     }
     return null;
@@ -406,11 +497,16 @@ final class _ReaderPagePainter extends CustomPainter {
     }
     final result = <_SelectionHandlePosition>[];
     for (final segment in page.segments) {
+      if (segment.kind == ReaderBlockKind.image) {
+        continue;
+      }
       final prefix = segment.indentFirstLine
           ? ReaderPaginator.paragraphIndent
           : '';
       final painter = ReaderPaginator.createPainter(
-        text: '$prefix${segment.text}',
+        text: segment.text,
+        prefix: prefix,
+        inlineSpans: segment.inlineSpans,
         kind: segment.kind,
         spec: spec,
       )..layout(maxWidth: spec.width);

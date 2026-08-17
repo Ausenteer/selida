@@ -53,7 +53,29 @@ void main() {
       expect(parsed.language, 'el');
       expect(parsed.chapters, hasLength(1));
       expect(parsed.chapters.single.title, 'Αρχή');
-      expect(parsed.chapters.single.blocks, hasLength(3));
+      expect(parsed.chapters.single.blocks, hasLength(7));
+      final paragraph = parsed.chapters.single.blocks[1];
+      expect(paragraph.inlineSpans.any((span) => span.bold), isTrue);
+      expect(paragraph.inlineSpans.any((span) => span.italic), isTrue);
+      final link = paragraph.inlineSpans.firstWhere(
+        (span) => span.href != null,
+      );
+      expect(link.targetChapterOrdinal, 0);
+      expect(link.targetOffset, greaterThan(0));
+      expect(
+        parsed.chapters.single.blocks.where(
+          (block) => block.kind.name == 'listItem',
+        ),
+        hasLength(2),
+      );
+      expect(
+        parsed.chapters.single.blocks.any(
+          (block) => block.kind.name == 'separator',
+        ),
+        isTrue,
+      );
+      expect(parsed.resources, hasLength(1));
+      expect(parsed.resources.single.mediaType, 'image/png');
       expect(parsed.toc, hasLength(2));
       expect(parsed.toc.first.chapterOrdinal, 0);
       expect(parsed.toc.last.depth, 1);
@@ -107,6 +129,7 @@ Uint8List _minimalEpub() {
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+    <item id="illustration" href="illustration.png" media-type="image/png"/>
   </manifest>
   <spine><itemref idref="chapter"/></spine>
 </package>''',
@@ -134,9 +157,19 @@ Uint8List _minimalEpub() {
         '''<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><body>
   <h1>Αρχή</h1>
-  <p>Χθες διάβαζα ένα ενδιαφέρον βιβλίο.</p>
+  <p><strong>Χθες</strong> <em>διάβαζα</em> ένα <a href="#today">ενδιαφέρον βιβλίο</a>.</p>
+  <ul><li>Πρώτο στοιχείο</li><li>Δεύτερο στοιχείο</li></ul>
+  <hr/>
+  <img src="illustration.png" alt="Μια εικόνα"/>
   <p id="today">Σήμερα συνεχίζω την ιστορία.</p>
 </body></html>''',
+      ),
+    )
+    ..add(
+      ArchiveFile(
+        'OEBPS/illustration.png',
+        4,
+        Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47]),
       ),
     );
   return Uint8List.fromList(ZipEncoder().encode(archive));

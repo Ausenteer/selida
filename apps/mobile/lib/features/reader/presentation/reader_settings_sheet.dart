@@ -51,6 +51,52 @@ final class _ReaderSettingsSheet extends ConsumerWidget {
               showSelectedIcon: false,
             ),
             const SizedBox(height: 12),
+            Text(
+              strings.readerFont,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<ReaderFontFamily>(
+              segments: <ButtonSegment<ReaderFontFamily>>[
+                ButtonSegment<ReaderFontFamily>(
+                  value: ReaderFontFamily.literata,
+                  label: Text(strings.fontLiterata),
+                ),
+                ButtonSegment<ReaderFontFamily>(
+                  value: ReaderFontFamily.inter,
+                  label: Text(strings.fontInter),
+                ),
+              ],
+              selected: <ReaderFontFamily>{preferences.fontFamily},
+              onSelectionChanged: (Set<ReaderFontFamily> value) {
+                notifier.setFontFamily(value.single);
+              },
+              showSelectedIcon: false,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              strings.textAlignment,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            SegmentedButton<ReaderTextAlignment>(
+              segments: <ButtonSegment<ReaderTextAlignment>>[
+                ButtonSegment<ReaderTextAlignment>(
+                  value: ReaderTextAlignment.left,
+                  label: Text(strings.alignLeft),
+                ),
+                ButtonSegment<ReaderTextAlignment>(
+                  value: ReaderTextAlignment.justified,
+                  label: Text(strings.alignJustified),
+                ),
+              ],
+              selected: <ReaderTextAlignment>{preferences.textAlignment},
+              onSelectionChanged: (Set<ReaderTextAlignment> value) {
+                notifier.setTextAlignment(value.single);
+              },
+              showSelectedIcon: false,
+            ),
+            const SizedBox(height: 12),
             _SettingSlider(
               label: strings.fontSize,
               value: preferences.fontSize,

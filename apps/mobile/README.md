@@ -5,7 +5,8 @@ Flutter-клиент для iOS и Android. Код организован по �
 - `lib/core/database` — локальная Drift-схема и миграции;
 - `lib/features/import` — file picker, EPUB/TXT parser и запись книги;
 - `lib/features/library` — библиотека и удаление книг;
-- `lib/features/reader` — пагинация, canvas-рендер, hit testing и настройки;
+- `lib/features/reader` — поиск по книге, пагинация, rich-text/canvas-рендер,
+  hit testing, межглавное выделение и настройки типографики;
 - `lib/app` — навигация, тема, локализация и обработка системного Share.
 
 Генерируемые Drift и localization-файлы хранятся рядом с исходниками, чтобы

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selida/core/database/app_database.dart';
 import 'package:selida/features/reader/application/reader_pagination_cache.dart';
+import 'package:selida/features/reader/application/reader_pagination_controller.dart';
 import 'package:selida/features/reader/application/reader_paginator.dart';
 import 'package:selida/features/reader/domain/reader_page.dart';
 
@@ -134,5 +135,79 @@ void main() {
       cache.identityFor(lightSpec).fingerprint,
       isNot(cache.identityFor(modernSpec).fingerprint),
     );
+  });
+
+  test('adjacent chapter prefetch stores pages and reports metrics', () async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    const text = 'A short adjacent chapter that fits on a single page.';
+    await database
+        .into(database.books)
+        .insert(
+          BooksCompanion.insert(
+            id: 'book-prefetch',
+            format: 'epub',
+            title: 'Prefetch',
+            language: 'en',
+            contentHash: 'hash-prefetch',
+            totalLength: text.length,
+            lastOpenedAt: DateTime.utc(2026, 8, 17),
+          ),
+        );
+    await database
+        .into(database.chapters)
+        .insert(
+          ChaptersCompanion.insert(
+            id: 'chapter-prefetch',
+            bookId: 'book-prefetch',
+            ordinal: 0,
+            plainText: text,
+            lengthUtf16: text.length,
+          ),
+        );
+    final metrics = <ReaderPaginationMetrics>[];
+    final controller = ReaderPaginationController(
+      database: database,
+      bookId: 'book-prefetch',
+      onMetrics: metrics.add,
+    );
+    addTearDown(controller.dispose);
+    const spec = ReaderLayoutSpec(
+      width: 300,
+      height: 500,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+    );
+    final identity = controller.identityFor(spec);
+    final blocks = <ReaderBlock>[
+      ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: text,
+        startOffset: 0,
+        endOffset: text.length,
+      ),
+    ];
+
+    await controller.prefetch(
+      blocks: blocks,
+      spec: spec,
+      identity: identity,
+      chapterId: 'chapter-prefetch',
+      chapterLength: text.length,
+    );
+
+    final ranges = await ReaderPaginationCache(database).load(
+      bookId: 'book-prefetch',
+      chapterId: 'chapter-prefetch',
+      identity: identity,
+      maximumOffset: text.length,
+    );
+    expect(ranges, isNotEmpty);
+    expect(metrics, hasLength(1));
+    expect(metrics.single.source, ReaderPaginationSource.prefetch);
+    expect(metrics.single.pageCount, ranges?.length);
+    expect(metrics.single.frameSlices, greaterThanOrEqualTo(1));
   });
 }

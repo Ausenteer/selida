@@ -74,6 +74,45 @@ class AppLocalizationsRu extends AppLocalizations {
   String get modernParagraphStyle => 'Современные';
 
   @override
+  String get textAlignment => 'Выравнивание';
+
+  @override
+  String get readerFont => 'Шрифт';
+
+  @override
+  String get fontLiterata => 'Literata';
+
+  @override
+  String get fontInter => 'Inter';
+
+  @override
+  String get alignLeft => 'По левому краю';
+
+  @override
+  String get alignJustified => 'По ширине';
+
+  @override
+  String get externalLinkCopied => 'Внешняя ссылка скопирована';
+
+  @override
+  String get searchInBook => 'Поиск по книге';
+
+  @override
+  String get searchBookHint => 'Слово или фраза';
+
+  @override
+  String get searchStartTyping =>
+      'Введите слово или фразу для поиска по всей книге.';
+
+  @override
+  String get searchNoResults => 'Ничего не найдено';
+
+  @override
+  String searchResultsCount(int count) {
+    return 'Результатов: $count';
+  }
+
+  @override
   String get fontSize => 'Размер текста';
 
   @override

@@ -24,7 +24,9 @@ void main() {
       ..setBrightness(0.7)
       ..setPageAnimationEnabled(value: false)
       ..setTheme(ReaderTheme.dark)
-      ..setParagraphStyle(ReaderParagraphStyle.modern);
+      ..setParagraphStyle(ReaderParagraphStyle.modern)
+      ..setTextAlignment(ReaderTextAlignment.justified)
+      ..setFontFamily(ReaderFontFamily.inter);
 
     await _waitFor(
       () async =>
@@ -51,6 +53,8 @@ void main() {
     expect(restored.pageAnimationEnabled, isFalse);
     expect(restored.theme, ReaderTheme.dark);
     expect(restored.paragraphStyle, ReaderParagraphStyle.modern);
+    expect(restored.textAlignment, ReaderTextAlignment.justified);
+    expect(restored.fontFamily, ReaderFontFamily.inter);
   });
 }
 

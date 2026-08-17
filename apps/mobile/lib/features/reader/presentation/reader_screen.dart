@@ -10,9 +10,11 @@ import 'package:selida/core/database/database_provider.dart';
 import 'package:selida/features/dictionary/application/vocabulary_service.dart';
 import 'package:selida/features/reader/application/reader_book_navigation.dart';
 import 'package:selida/features/reader/application/reader_interaction_controller.dart';
+import 'package:selida/features/reader/application/reader_pagination_cache.dart';
 import 'package:selida/features/reader/application/reader_pagination_controller.dart';
 import 'package:selida/features/reader/application/reader_paginator.dart';
 import 'package:selida/features/reader/application/reader_providers.dart';
+import 'package:selida/features/reader/application/reader_search_controller.dart';
 import 'package:selida/features/reader/domain/reader_page.dart';
 import 'package:selida/features/reader/domain/reader_preferences.dart';
 import 'package:selida/features/reader/presentation/reader_page_surface.dart';
@@ -23,6 +25,7 @@ import 'package:selida/l10n/generated/app_localizations.dart';
 
 part 'reader_chrome.dart';
 part 'reader_contents_sheet.dart';
+part 'reader_search_sheet.dart';
 part 'reader_settings_sheet.dart';
 part 'reader_support.dart';
 part 'reader_text_assistance_sheet.dart';
@@ -70,9 +73,11 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   var _currentPageIndex = 0;
   var _currentTextOffset = 0;
   ReaderTextRange? _activeSelection;
+  ReaderChapterSelection? _crossChapterSelection;
   ReaderTextRange? _focusedWordRange;
   var _selectionActionsVisible = false;
   final List<ReaderLocation> _navigationHistory = <ReaderLocation>[];
+  final Set<String> _adjacentPrefetchSchedules = <String>{};
   int? _brightnessPointer;
   double? _lastBrightnessY;
   OverlayEntry? _wordPopover;
@@ -197,7 +202,10 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                     lineHeight: preferences.lineHeight,
                     locale: Locale(_bookLanguage),
                     textColor: palette.text,
+                    linkColor: palette.accent,
                     paragraphStyle: preferences.paragraphStyle,
+                    textAlignment: preferences.textAlignment,
+                    fontFamily: preferences.fontFamily,
                   );
                   final identity = _pagination.identityFor(spec);
                   final key = '${_chapter.id}:${identity.fingerprint}';
@@ -214,6 +222,18 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                   final pages = _pagination.layoutKey == key
                       ? _pagination.pages
                       : null;
+                  final prefetchKey = '$_chapterIndex:${identity.fingerprint}';
+                  if (pages != null &&
+                      _pagination.complete &&
+                      _adjacentPrefetchSchedules.add(prefetchKey)) {
+                    unawaited(
+                      _prefetchAdjacentChapters(
+                        chapterIndex: _chapterIndex,
+                        spec: spec,
+                        identity: identity,
+                      ),
+                    );
+                  }
                   if (pages == null || pages.isEmpty) {
                     return _ReaderPageSkeleton(color: palette.skeleton);
                   }
@@ -257,6 +277,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                             ),
                             savedOccurrences: savedOccurrences,
                           ),
+                          onLinkTap: _openInlineLink,
                           onTextSelected: (ReaderTextSelection selection) =>
                               unawaited(
                                 _showTextAssistance(
@@ -268,6 +289,33 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
                           onSelectionChanged: (ReaderTextRange? selection) {
                             setState(() {
                               _activeSelection = selection;
+                              if (selection == null) {
+                                _crossChapterSelection = null;
+                              } else if (_crossChapterSelection
+                                  case final cross?) {
+                                final maximumLength = cross
+                                    .maximumRangeLengthFor(_chapterIndex);
+                                final effectiveSelection =
+                                    selection.length <= maximumLength
+                                    ? selection
+                                    : _chapterIndex == cross.firstChapterIndex
+                                    ? ReaderTextRange(
+                                        startOffset:
+                                            selection.endOffset - maximumLength,
+                                        endOffset: selection.endOffset,
+                                      )
+                                    : ReaderTextRange(
+                                        startOffset: selection.startOffset,
+                                        endOffset:
+                                            selection.startOffset +
+                                            maximumLength,
+                                      );
+                                _activeSelection = effectiveSelection;
+                                _crossChapterSelection = cross.updateRange(
+                                  _chapterIndex,
+                                  effectiveSelection,
+                                );
+                              }
                               _selectionActionsVisible = selection != null;
                             });
                           },
@@ -337,6 +385,10 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
               _dismissWordPopover();
               unawaited(_showContents());
             },
+            onSearch: () {
+              _dismissWordPopover();
+              unawaited(_showSearch());
+            },
             onSettings: () {
               _dismissWordPopover();
               unawaited(_showSettings());
@@ -352,6 +404,38 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   void _onPaginationChanged() {
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  Future<void> _prefetchAdjacentChapters({
+    required int chapterIndex,
+    required ReaderLayoutSpec spec,
+    required ReaderPaginationIdentity identity,
+  }) async {
+    final chapterIndexes = <int>[
+      if (chapterIndex + 1 < widget.document.chapters.length) chapterIndex + 1,
+      if (chapterIndex > 0) chapterIndex - 1,
+    ];
+    for (final index in chapterIndexes) {
+      final chapter = widget.document.chapters[index];
+      try {
+        final blocks = await ref.read(chapterBlocksProvider(chapter.id).future);
+        if (!mounted) {
+          return;
+        }
+        await _pagination.prefetch(
+          blocks: blocks,
+          spec: spec,
+          identity: identity,
+          chapterId: chapter.id,
+          chapterLength: chapter.lengthUtf16,
+        );
+      } on Object catch (error) {
+        assert(() {
+          debugPrint('Could not prefetch chapter ${chapter.id}: $error');
+          return true;
+        }());
+      }
     }
   }
 
@@ -433,10 +517,31 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     }
   }
 
+  void _openInlineLink(ReaderInlineSpan link) {
+    final targetChapter = link.targetChapterOrdinal;
+    if (targetChapter != null) {
+      _openChapter(
+        targetChapter,
+        textOffset: link.targetOffset ?? 0,
+        rememberCurrentLocation: true,
+      );
+      return;
+    }
+    final href = link.href;
+    if (href == null || href.isEmpty) {
+      return;
+    }
+    unawaited(Clipboard.setData(ClipboardData(text: href)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocalizations.of(context).externalLinkCopied)),
+    );
+  }
+
   void _openChapter(
     int target, {
     int textOffset = 0,
     bool rememberCurrentLocation = false,
+    ReaderTextRange? carriedSelection,
   }) {
     if (target < 0 || target >= widget.document.chapters.length) {
       return;
@@ -456,8 +561,11 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       _currentPageIndex = 0;
       _currentTextOffset = textOffset.clamp(0, chapter.lengthUtf16);
       _pagination.reset(notify: false);
-      _activeSelection = null;
-      _selectionActionsVisible = false;
+      _activeSelection = carriedSelection;
+      _selectionActionsVisible = carriedSelection != null;
+      if (carriedSelection == null) {
+        _crossChapterSelection = null;
+      }
     });
     unawaited(_persistReaderPosition());
   }
@@ -493,6 +601,7 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     }
     setState(() {
       _activeSelection = null;
+      _crossChapterSelection = null;
       _selectionActionsVisible = false;
     });
   }
@@ -504,7 +613,11 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
   }) {
     final selection = _activeSelection;
     final targetIndex = _currentPageIndex + direction;
-    if (selection == null || targetIndex < 0 || targetIndex >= pages.length) {
+    if (selection == null) {
+      return;
+    }
+    if (targetIndex < 0 || targetIndex >= pages.length) {
+      _extendSelectionAcrossChapter(direction);
       return;
     }
     final updated = _selectionController.extendAcrossPage(
@@ -512,6 +625,8 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       targetPage: pages[targetIndex],
       chapterText: _chapter.plainText,
       direction: direction,
+      maximumLength:
+          _crossChapterSelection?.maximumRangeLengthFor(_chapterIndex) ?? 1000,
     );
     if (updated == null) {
       return;
@@ -521,6 +636,48 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       _selectionActionsVisible = true;
     });
     _turnToPage(targetIndex, animate: animate);
+  }
+
+  void _extendSelectionAcrossChapter(int direction) {
+    final selection = _activeSelection;
+    final targetIndex = _chapterIndex + direction;
+    if (selection == null ||
+        targetIndex < 0 ||
+        targetIndex >= widget.document.chapters.length) {
+      return;
+    }
+    final existing = _crossChapterSelection;
+    final existingTargetRange = existing?.rangeForChapter(targetIndex);
+    if (existingTargetRange != null) {
+      _openChapter(
+        targetIndex,
+        textOffset: direction > 0 ? 0 : existingTargetRange.startOffset,
+        carriedSelection: existingTargetRange,
+      );
+      return;
+    }
+    if (existing != null) {
+      return;
+    }
+    final targetChapter = widget.document.chapters[targetIndex];
+    final cross = _selectionController.extendAcrossChapter(
+      currentChapterIndex: _chapterIndex,
+      targetChapterIndex: targetIndex,
+      currentSelection: selection,
+      currentChapterText: _chapter.plainText,
+      targetChapterText: targetChapter.plainText,
+      direction: direction,
+    );
+    final targetRange = cross?.rangeForChapter(targetIndex);
+    if (cross == null || targetRange == null) {
+      return;
+    }
+    _crossChapterSelection = cross;
+    _openChapter(
+      targetIndex,
+      textOffset: direction > 0 ? 0 : targetRange.startOffset,
+      carriedSelection: targetRange,
+    );
   }
 
   StoredWordOccurrence? _occurrenceAt(
@@ -658,6 +815,9 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     _wordPopover?.remove();
     _wordPopover = null;
     setState(() {
+      _activeSelection = null;
+      _crossChapterSelection = null;
+      _selectionActionsVisible = false;
       _focusedWordRange = ReaderTextRange(
         startOffset: hit.startOffset,
         endOffset: hit.endOffset,
@@ -770,19 +930,45 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
     final chapterText = _chapter.plainText;
     final start = selection.startOffset.clamp(0, chapterText.length);
     final end = selection.endOffset.clamp(start, chapterText.length);
-    if (end <= start) {
-      return;
+    final crossSelection = _crossChapterSelection;
+    final String source;
+    final String contextSentence;
+    final int contextPhraseStart;
+    final StoredWordOccurrence? savedOccurrence;
+    final bool savesAsWord;
+    final bool canSaveCurrentSelection;
+    if (crossSelection != null) {
+      source = crossSelection
+          .selectedText(
+            widget.document.chapters
+                .map((StoredChapter chapter) => chapter.plainText)
+                .toList(growable: false),
+          )
+          .trim();
+      contextSentence = source;
+      contextPhraseStart = 0;
+      savedOccurrence = null;
+      savesAsWord = false;
+      canSaveCurrentSelection = false;
+    } else {
+      if (end <= start) {
+        return;
+      }
+      source = chapterText.substring(start, end).trim();
+      final sentenceContext = sentenceContextAround(
+        text: chapterText,
+        startOffset: start,
+        endOffset: end,
+      );
+      contextSentence = sentenceContext.text;
+      contextPhraseStart = start - sentenceContext.startOffset;
+      savedOccurrence = _occurrenceMatching(savedOccurrences, start, source);
+      savesAsWord = isSingleVocabularyItem(source);
+      canSaveCurrentSelection = canSavePhrase;
     }
-    final source = chapterText.substring(start, end).trim();
     if (source.isEmpty) {
       return;
     }
-    final sentenceContext = sentenceContextAround(
-      text: chapterText,
-      startOffset: start,
-      endOffset: end,
-    );
-    final contextSentence = sentenceContext.text;
     final request = TextAssistanceRequest(
       sourceLanguage: _bookLanguage,
       targetLanguage: 'ru',
@@ -792,12 +978,6 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
       source: source.length > 1000 ? source.substring(0, 1000) : source,
       context: contextSentence,
     );
-    final savedOccurrence = _occurrenceMatching(
-      savedOccurrences,
-      start,
-      request.source,
-    );
-    final savesAsWord = isSingleVocabularyItem(request.source);
     if (mounted) {
       setState(() => _selectionActionsVisible = false);
     }
@@ -811,14 +991,14 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
         sourceText: request.source,
         savesAsWord: savesAsWord,
         savedOccurrence: savedOccurrence,
-        onSave: canSavePhrase
+        onSave: canSaveCurrentSelection
             ? (FragmentTranslation translation) async {
                 final service = ref.read(vocabularyServiceProvider);
                 final vocabularyId = await service.savePhrase(
                   request: request,
                   translation: translation,
                   contextSentence: contextSentence,
-                  contextPhraseStart: start - sentenceContext.startOffset,
+                  contextPhraseStart: contextPhraseStart,
                   sourceBookId: widget.document.book.id,
                   sourceBookTitle: widget.document.book.title,
                   sourceChapterId: _chapter.id,
@@ -867,6 +1047,23 @@ final class _LoadedReaderState extends ConsumerState<_LoadedReader> {
         onBookLanguageChanged: _changeBookLanguage,
       ),
     );
+  }
+
+  Future<void> _showSearch() async {
+    final selected = await showModalBottomSheet<ReaderLocation>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext context) =>
+          _ReaderSearchSheet(document: widget.document),
+    );
+    if (selected != null) {
+      _openChapter(
+        selected.chapterIndex,
+        textOffset: selected.textOffset,
+        rememberCurrentLocation: true,
+      );
+    }
   }
 
   Future<void> _changeBookLanguage(String language) async {

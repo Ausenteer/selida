@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:selida/core/database/app_database.dart';
@@ -48,14 +50,45 @@ final chapterBlocksProvider = FutureProvider.family<List<ReaderBlock>, String>((
         kind: switch (row.kind) {
           'heading' => ReaderBlockKind.heading,
           'quote' => ReaderBlockKind.quote,
+          'listItem' => ReaderBlockKind.listItem,
+          'separator' => ReaderBlockKind.separator,
+          'image' => ReaderBlockKind.image,
           _ => ReaderBlockKind.paragraph,
         },
         text: row.textContent,
         startOffset: row.startOffset,
         endOffset: row.endOffset,
+        inlineSpans: _decodeInlineSpans(row.inlineSpansJson),
+        resourcePath: row.resourcePath,
+        altText: row.altText,
       ),
   ];
 });
+
+List<ReaderInlineSpan> _decodeInlineSpans(String source) {
+  try {
+    final values = jsonDecode(source) as List<Object?>;
+    return List<ReaderInlineSpan>.unmodifiable(<ReaderInlineSpan>[
+      for (final value in values)
+        if (value case final Map<String, Object?> json)
+          ReaderInlineSpan(
+            startOffset: json['start']! as int,
+            endOffset: json['end']! as int,
+            bold: json['bold'] == true,
+            italic: json['italic'] == true,
+            underline: json['underline'] == true,
+            href: json['href'] as String?,
+            isFootnote: json['footnote'] == true,
+            targetChapterOrdinal: json['targetChapter'] as int?,
+            targetOffset: json['targetOffset'] as int?,
+          ),
+    ]);
+  } on FormatException {
+    return const <ReaderInlineSpan>[];
+  } on TypeError {
+    return const <ReaderInlineSpan>[];
+  }
+}
 
 @immutable
 final class ReaderDocument {

@@ -158,4 +158,73 @@ void main() {
       greaterThan(bookSegments.last.top - bookSegments.first.height),
     );
   });
+
+  test('rich spans, images, font and alignment survive pagination', () {
+    const text = 'Read this linked passage';
+    final blocks = <ReaderBlock>[
+      const ReaderBlock(
+        kind: ReaderBlockKind.paragraph,
+        text: text,
+        startOffset: 0,
+        endOffset: text.length,
+        inlineSpans: <ReaderInlineSpan>[
+          ReaderInlineSpan(startOffset: 0, endOffset: 4, bold: true),
+          ReaderInlineSpan(
+            startOffset: 10,
+            endOffset: 16,
+            href: 'chapter.xhtml#note',
+            isFootnote: true,
+          ),
+        ],
+      ),
+      const ReaderBlock(
+        kind: ReaderBlockKind.image,
+        text: 'Map',
+        startOffset: text.length + 2,
+        endOffset: text.length + 5,
+        resourcePath: '/tmp/map.png',
+        altText: 'Map',
+      ),
+    ];
+    const spec = ReaderLayoutSpec(
+      width: 320,
+      height: 700,
+      fontSize: 18,
+      lineHeight: 1.55,
+      locale: Locale('en'),
+      textColor: Colors.black,
+      linkColor: Colors.blue,
+      textAlignment: ReaderTextAlignment.justified,
+      fontFamily: ReaderFontFamily.inter,
+    );
+
+    final painter = ReaderPaginator.createPainter(
+      text: text,
+      kind: ReaderBlockKind.paragraph,
+      spec: spec,
+      inlineSpans: blocks.first.inlineSpans,
+    );
+    expect(painter.textAlign, TextAlign.justify);
+    final root = painter.text! as TextSpan;
+    final styled = root.children!.whereType<TextSpan>().toList();
+    expect(
+      styled.any((TextSpan span) => span.style?.fontWeight == FontWeight.w700),
+      isTrue,
+    );
+    expect(
+      styled.any((TextSpan span) => span.style?.color == Colors.blue),
+      isTrue,
+    );
+    expect(root.style?.fontFamily, 'Inter');
+    painter.dispose();
+
+    final segments = ReaderPaginator.paginate(
+      blocks: blocks,
+      spec: spec,
+    ).expand((ReaderPage page) => page.segments).toList();
+    expect(segments.first.inlineSpans, hasLength(2));
+    expect(segments.last.kind, ReaderBlockKind.image);
+    expect(segments.last.resourcePath, '/tmp/map.png');
+    expect(segments.last.altText, 'Map');
+  });
 }

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selida/core/database/app_database.dart';
 
 void main() {
-  test('schema version 3 creates all local-first tables', () async {
+  test('schema version 4 creates all local-first tables', () async {
     final database = AppDatabase(NativeDatabase.memory());
     addTearDown(database.close);
 
@@ -15,7 +15,7 @@ void main() {
         .map((QueryRow row) => row.read<String>('name'))
         .toSet();
 
-    expect(database.schemaVersion, 3);
+    expect(database.schemaVersion, 4);
     expect(
       names,
       containsAll(<String>{
@@ -98,6 +98,18 @@ void main() {
           )
         ''');
           rawDatabase.execute('''
+          CREATE TABLE content_blocks (
+            id TEXT NOT NULL PRIMARY KEY,
+            chapter_id TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            text_content TEXT NOT NULL,
+            start_offset INTEGER NOT NULL,
+            end_offset INTEGER NOT NULL,
+            inline_spans_json TEXT NOT NULL DEFAULT '[]'
+          )
+        ''');
+          rawDatabase.execute('''
           INSERT INTO word_occurrences (
             id, vocabulary_id, surface_form, context_sentence,
             word_start, word_end, source_book_id, source_book_title,
@@ -130,9 +142,19 @@ void main() {
             'SELECT surface_form, source_chapter_id FROM word_occurrences',
           )
           .getSingle();
+      final contentColumns = await database
+          .customSelect('PRAGMA table_info(content_blocks)')
+          .get();
+      final contentColumnNames = contentColumns
+          .map((QueryRow row) => row.read<String>('name'))
+          .toSet();
 
       expect(names, contains('source_chapter_id'));
       expect(vocabularyColumnNames, contains('kind'));
+      expect(
+        contentColumnNames,
+        containsAll(<String>{'resource_path', 'alt_text'}),
+      );
       expect(occurrence.read<String>('surface_form'), 'walked');
       expect(occurrence.readNullable<String>('source_chapter_id'), null);
     },
